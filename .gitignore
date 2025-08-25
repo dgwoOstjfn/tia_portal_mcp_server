@@ -1,0 +1,30 @@
+# Git ignore file for TIA Portal MCP Server project
+# Only track: MCP_Server/, tia_portal_mcp.json, MCP_Call_Sequence_Diagram.md, MCP_Method_Dependencies.md
+
+# Ignore everything by default
+*
+
+# Allow specific files and folders
+!MCP_Server/
+!MCP_Server/**
+!tia_portal_mcp.json
+!MCP_Call_Sequence_Diagram.md
+!MCP_Method_Dependencies.md
+!.gitignore
+
+# Common exclusions within allowed directories
+MCP_Server/__pycache__/
+MCP_Server/**/__pycache__/
+MCP_Server/**/*.pyc
+MCP_Server/**/*.pyo
+MCP_Server/**/*.pyd
+MCP_Server/.env
+MCP_Server/venv/
+MCP_Server/.venv/
+MCP_Server/exports/
+MCP_Server/test_exports*/
+MCP_Server/**/.DS_Store
+MCP_Server/**/Thumbs.db
+MCP_Server/**/*.log
+MCP_Server/**/*.tmp
+MCP_Server/**/*.temp

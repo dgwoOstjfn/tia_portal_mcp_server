@@ -1,0 +1,34 @@
+{
+  "name": "tia-portal-mcp",
+  "version": "1.0.0",
+  "paths": {
+    "tia_portal": {
+      "installation_path": "C:\\Program Files\\Siemens\\Automation\\Portal V17",
+      "dll_path": "C:\\Program Files\\Siemens\\Automation\\Portal V17\\PublicAPI\\V17\\Siemens.Engineering.dll"
+    },
+    "project_defaults": {
+      "store_path": "./projects",
+      "export_path": "./exports",
+      "import_path": "./imports",
+      "temp_path": "./temp"
+    },
+    "test_materials": {
+      "enabled": true,
+      "path": "../Test_Material"
+    },
+    "internal_libraries": {
+      "tia_client": "./lib/tia_portal",
+      "converters": "./lib/converters",
+      "utilities": "./lib/utils"
+    }
+  },
+  "settings": {
+    "logging": {
+      "level": "INFO"
+    },
+    "session": {
+      "timeout_seconds": 3600,
+      "max_concurrent": 3
+    }
+  }
+}
