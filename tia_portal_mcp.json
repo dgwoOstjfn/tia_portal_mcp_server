@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "paths": {
     "tia_portal": {
-      "installation_path": "C:\\Program Files\\Siemens\\Automation\\Portal V17",
-      "dll_path": "C:\\Program Files\\Siemens\\Automation\\Portal V17\\PublicAPI\\V17\\Siemens.Engineering.dll"
+      "installation_path": "C:\\Program Files\\Siemens\\Automation\\Portal V20",
+      "dll_path": "C:\\Program Files\\Siemens\\Automation\\Portal V20\\PublicAPI\\V20\\Siemens.Engineering.dll"
     },
     "project_defaults": {
       "store_path": "./projects",
