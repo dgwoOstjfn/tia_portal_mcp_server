@@ -46,10 +46,11 @@ python -m pytest test_*.py
 ### Configuration
 - **Main config**: `tia_portal_mcp.json` (auto-created on first run)
 - **MCP client config**: `.mcp.json` (project) or `~/.claude.json` (user)
-- **Simplified setup**: Specify project root path in two places (`command` and `cwd`), `args` uses relative path
-  - `command`: Full path to `<PROJECT_ROOT>\venv\Scripts\python.exe`
-  - `cwd`: Project root directory path
-  - `args`: Relative path `MCP_Server\start_server.py` (relative to `cwd`)
+- **Simplified setup**: Only specify project root path once in `command`
+  - `command`: Full path to `<PROJECT_ROOT>\venv\Scripts\python.exe` (absolute path required)
+  - `args`: Relative path `MCP_Server\start_server.py` (works from any directory)
+  - `cwd`: Optional - `start_server.py` auto-detects and switches to project root
+  - No PYTHONPATH needed - all paths configured automatically by startup script
 - **Example**: See `.mcp.example.json` for a template configuration
 
 ## Architecture

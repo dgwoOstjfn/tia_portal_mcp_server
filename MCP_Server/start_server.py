@@ -3,8 +3,11 @@
 TIA Portal MCP Server Startup Script
 Clean production entry point for the MCP server
 
-This script automatically configures Python path to find all required modules,
-eliminating the need for PYTHONPATH environment variable in MCP configuration.
+This script automatically:
+1. Detects and switches to the project root directory (eliminates need for 'cwd' in MCP config)
+2. Configures Python path to find all required modules (eliminates need for PYTHONPATH)
+
+This allows the simplest possible MCP configuration - only 'command' needs an absolute path.
 """
 import sys
 import os
@@ -12,6 +15,14 @@ from pathlib import Path
 
 # Get the MCP_Server directory (parent of this script)
 mcp_server_dir = Path(__file__).parent.resolve()
+
+# Get the project root directory (parent of MCP_Server)
+project_root = mcp_server_dir.parent
+
+# Change to project root directory
+# This ensures relative paths in config files work correctly
+# and allows cwd in .mcp.json to be omitted or set to any value
+os.chdir(project_root)
 
 # Add both MCP_Server and MCP_Server/src to Python path
 # This allows imports like: from src.server import main, and import lib.tia_portal
