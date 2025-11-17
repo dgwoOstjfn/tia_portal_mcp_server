@@ -1053,32 +1053,39 @@ class TIAPortalMCPServer:
     async def start(self):
         """Start the MCP server"""
         logger.info("Starting TIA Portal MCP Server...")
-        
+
         # Start session manager
         await self.session_manager.start()
-        
+
         # Use MCP's built-in stdio transport
         from mcp.server.stdio import stdio_server
-        
-        # Run server using stdio transport
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name=self.name,
-                    server_version=self.version,
-                    capabilities=self.server.get_capabilities(
-                        NotificationOptions(),
-                        {}
+
+        try:
+            # Run server using stdio transport
+            async with stdio_server() as (read_stream, write_stream):
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    InitializationOptions(
+                        server_name=self.name,
+                        server_version=self.version,
+                        capabilities=self.server.get_capabilities(
+                            NotificationOptions(),
+                            {}
+                        )
                     )
                 )
-            )
-    
+        finally:
+            # Ensure cleanup happens even if server.run() is interrupted
+            await self.stop()
+
     async def stop(self):
-        """Stop the MCP server"""
+        """Stop the MCP server and cleanup resources"""
         logger.info("Stopping TIA Portal MCP Server...")
         await self.session_manager.stop()
+
+        # Note: COM resource cleanup delay is handled in TIAClientWrapper.disconnect()
+        # No delay here to allow process to exit quickly during reconnects
 
 
 async def test_server():
@@ -1168,8 +1175,7 @@ def main():
             logger.error(f"Server error: {e}")
             import traceback
             traceback.print_exc()
-        finally:
-            asyncio.run(server.stop())
+        # Note: cleanup is handled in start() method's finally block
 
 
 if __name__ == "__main__":

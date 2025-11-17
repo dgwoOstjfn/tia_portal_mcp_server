@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "tia-portal": {
-      "comment": "Only 'command' needs absolute path - replace <PROJECT_ROOT> with your project directory",
-      "command": "<PROJECT_ROOT>\\venv\\Scripts\\python.exe",
-      "args": [
-        "MCP_Server\\start_server.py"
-      ],
+      "comment": "Only ONE absolute path needed - replace <PROJECT_ROOT> with your actual project directory (e.g., C:\\Users\\YourName\\Desktop\\tia_portal_mcp_server)",
+      "command": "<PROJECT_ROOT>\\launch_mcp.bat",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "TIA_SESSION_TIMEOUT": "3600",

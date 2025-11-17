@@ -15,6 +15,7 @@
 !README.md
 !.mcp.json
 !.mcp.example.json
+!launch_mcp.bat
 
 # Common exclusions within allowed directories
 MCP_Server/__pycache__/

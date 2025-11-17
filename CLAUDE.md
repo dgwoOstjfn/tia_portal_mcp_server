@@ -46,11 +46,15 @@ python -m pytest test_*.py
 ### Configuration
 - **Main config**: `tia_portal_mcp.json` (auto-created on first run)
 - **MCP client config**: `.mcp.json` (project) or `~/.claude.json` (user)
-- **Simplified setup**: Only specify project root path once in `command`
-  - `command`: Full path to `<PROJECT_ROOT>\venv\Scripts\python.exe` (absolute path required)
-  - `args`: Relative path `MCP_Server\start_server.py` (works from any directory)
-  - `cwd`: Optional - `start_server.py` auto-detects and switches to project root
-  - No PYTHONPATH needed - all paths configured automatically by startup script
+- **Simplified setup**: Only ONE absolute path required
+  - `command`: `<PROJECT_ROOT>\launch_mcp.bat` - launcher script that auto-detects all paths
+  - `args`: Not needed - launcher handles everything
+  - `cwd`: Not needed - launcher auto-detects and switches to project root
+  - No PYTHONPATH needed - all paths configured automatically
+- **How it works**:
+  - `launch_mcp.bat` uses `%~dp0` to detect its own location (project root)
+  - Automatically derives paths to virtual environment and startup script
+  - Works from any directory without additional configuration
 - **Example**: See `.mcp.example.json` for a template configuration
 
 ## Architecture
@@ -285,9 +289,11 @@ C:\Program Files\Siemens\Automation\Portal V{XX}\PublicAPI\V{XX}\Siemens.Enginee
 3. **Hardcoded defaults** (fallback)
 
 ### Path Resolution
-- Relative paths in `.mcp.json` resolve from the `cwd` (project root directory)
-- `sys.path` automatically configured by `start_server.py` for internal libraries
-- No need to set `PYTHONPATH` environment variable - the startup script handles all path configuration automatically
+- Only ONE absolute path required in `.mcp.json` - the path to `launch_mcp.bat`
+- `launch_mcp.bat` uses batch file variable `%~dp0` to auto-detect project root
+- `start_server.py` configures `sys.path` for internal libraries automatically
+- No need to set `PYTHONPATH` environment variable - everything is auto-configured
+- Works from any directory - no `cwd` parameter needed
 
 ## Testing Checklist
 

@@ -89,7 +89,7 @@ class TIAClientWrapper:
     
     async def disconnect(self) -> bool:
         """Disconnect from TIA Portal
-        
+
         Returns:
             True if disconnection successful
         """
@@ -97,16 +97,22 @@ class TIAClientWrapper:
             if self.project:
                 await self.save_project()
                 await self.close_project()
-            
+
             if self.client:
                 def _disconnect():
                     self.client.close()
                     return True
-                
+
                 result = await self.execute_sync(_disconnect)
                 self.client = None
                 self.is_connected = False
                 print("Disconnected from TIA Portal")
+
+                # Add delay to ensure COM resources are fully released
+                # This prevents race conditions during rapid reconnects
+                # 0.3s is sufficient for COM cleanup without blocking process exit
+                await asyncio.sleep(0.3)
+
                 return result
             return True
         except Exception as e:
