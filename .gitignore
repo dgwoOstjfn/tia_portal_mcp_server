@@ -11,6 +11,9 @@
 !MCP_Call_Sequence_Diagram.md
 !MCP_Method_Dependencies.md
 !.gitignore
+!CLAUDE.md
+!.mcp.json
+!.mcp.example.json
 
 # Common exclusions within allowed directories
 MCP_Server/__pycache__/

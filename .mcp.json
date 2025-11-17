@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "tia-portal": {
+      "command": "venv\\Scripts\\python.exe",
+      "args": [
+        "MCP_Server\\start_server.py"
+      ],
+      "cwd": "C:\\Users\\dgwo\\Desktop\\tia_mcp\\tia_portal_mcp_server",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "TIA_SESSION_TIMEOUT": "3600",
+        "TIA_MAX_SESSIONS": "3"
+      }
+    }
+  }
+}
