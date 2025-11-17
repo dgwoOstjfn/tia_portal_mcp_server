@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "tia-portal": {
-      "command": "venv\\Scripts\\python.exe",
+      "command": "C:\\Users\\dgwo\\Desktop\\tia_mcp\\tia_portal_mcp_server\\venv\\Scripts\\python.exe",
       "args": [
         "MCP_Server\\start_server.py"
       ],
