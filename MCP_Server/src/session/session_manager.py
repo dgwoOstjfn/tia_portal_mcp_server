@@ -8,6 +8,7 @@ from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
+from handlers.cache_handlers import CacheManager
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -22,6 +23,12 @@ class TIASession:
     current_project: Optional[str] = None
     project_modified: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
+    cache_manager: Optional[CacheManager] = None
+
+    def __post_init__(self):
+        """Initialize cache manager after creation"""
+        if not self.cache_manager:
+            self.cache_manager = CacheManager(self.session_id)
     
     def update_activity(self):
         """Update last activity timestamp"""
@@ -187,6 +194,13 @@ class SessionManager:
                 except Exception as e:
                     logger.error(f"Error disconnecting session {session_id}: {e}")
             
+            # Cleanup cache
+            if session.cache_manager:
+                try:
+                    session.cache_manager.cleanup()
+                except Exception as e:
+                    logger.error(f"Error cleaning up cache for session {session_id}: {e}")
+
             # Remove session
             del self.sessions[session_id]
             logger.info(f"Closed session: {session_id}")
