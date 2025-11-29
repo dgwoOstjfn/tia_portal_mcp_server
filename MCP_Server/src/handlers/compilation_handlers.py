@@ -44,21 +44,21 @@ class CompilationHandlers:
         try:
             def _compile_project():
                 """Execute project compilation"""
-                print("Starting project compilation...")
-                
+                logger.info("Starting project compilation...")
+
                 # Use the project's compile method
                 result = session.client_wrapper.project.compile()
-                
+
                 # Check if compilation was successful
                 if result is True:
-                    print("Project compilation completed successfully")
+                    logger.info("Project compilation completed successfully")
                     return True
                 elif result is False:
-                    print("Project compilation completed with warnings/errors")
+                    logger.info("Project compilation completed with warnings/errors")
                     return False
                 else:
                     # Handle string result or other return types
-                    print(f"Project compilation result: {result}")
+                    logger.info(f"Project compilation result: {result}")
                     return result
             
             compile_result = await session.client_wrapper.execute_sync(_compile_project)
@@ -99,14 +99,14 @@ class CompilationHandlers:
         try:
             def _compile_device():
                 """Execute device compilation"""
-                print(f"Starting device compilation for: {device_name or 'first device'}")
-                
+                logger.info(f"Starting device compilation for: {device_name or 'first device'}")
+
                 # Get PLCs from project
                 plcs = session.client_wrapper.project.get_plcs()
-                
+
                 if not plcs or len(plcs) == 0:
                     raise ValueError("No PLCs found in project")
-                
+
                 # Find target PLC
                 target_plc = None
                 if device_name:
@@ -119,17 +119,17 @@ class CompilationHandlers:
                 else:
                     # Use first PLC
                     target_plc = plcs[0]
-                
-                print(f"Compiling PLC: {target_plc.name if hasattr(target_plc, 'name') else 'Unknown'}")
-                
+
+                logger.info(f"Compiling PLC: {target_plc.name if hasattr(target_plc, 'name') else 'Unknown'}")
+
                 # Get PLC software and compile it
                 plc_software = target_plc.get_software()
                 if hasattr(plc_software, 'compile'):
                     result = plc_software.compile()
-                    print(f"PLC software compilation result: {result}")
+                    logger.info(f"PLC software compilation result: {result}")
                     return result
                 else:
-                    print("PLC software does not support compilation")
+                    logger.info("PLC software does not support compilation")
                     return False
             
             compile_result = await session.client_wrapper.execute_sync(_compile_device)
@@ -168,7 +168,7 @@ class CompilationHandlers:
         try:
             def _compile_block():
                 """Execute block compilation"""
-                print(f"Starting block compilation for: {block_name}")
+                logger.info(f"Starting block compilation for: {block_name}")
                 
                 # Get PLCs from project
                 plcs = session.client_wrapper.project.get_plcs()
@@ -209,23 +209,23 @@ class CompilationHandlers:
                 
                 if not target_block:
                     raise ValueError(f"Block '{block_name}' not found in project")
-                
-                print(f"Found block '{block_name}', attempting compilation...")
-                
+
+                logger.info(f"Found block '{block_name}', attempting compilation...")
+
                 # Try to compile the block
                 if hasattr(target_block, 'compile'):
                     result = target_block.compile()
-                    print(f"Block compilation result: {result}")
+                    logger.info(f"Block compilation result: {result}")
                     return result
                 else:
                     # Try compiling the entire PLC software containing the block
-                    print(f"Block does not support direct compilation, compiling PLC software...")
+                    logger.info(f"Block does not support direct compilation, compiling PLC software...")
                     if hasattr(plc_software, 'compile'):
                         result = plc_software.compile()
-                        print(f"PLC software compilation result: {result}")
+                        logger.info(f"PLC software compilation result: {result}")
                         return result
                     else:
-                        print("Neither block nor PLC software supports compilation")
+                        logger.info("Neither block nor PLC software supports compilation")
                         return False
             
             def _get_block_collections_from_groups(groups):
@@ -252,8 +252,8 @@ class CompilationHandlers:
                             return block
                             
                 except Exception as e:
-                    print(f"Error searching in collection: {e}")
-                
+                    logger.debug(f"Error searching in collection: {e}")
+
                 return None
             
             compile_result = await session.client_wrapper.execute_sync(_compile_block)
@@ -291,7 +291,7 @@ class CompilationHandlers:
         try:
             def _get_errors():
                 """Get compilation errors"""
-                print("Retrieving compilation errors and warnings...")
+                logger.info("Retrieving compilation errors and warnings...")
                 
                 errors = []
                 warnings = []

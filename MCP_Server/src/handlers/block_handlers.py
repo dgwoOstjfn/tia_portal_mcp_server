@@ -8,16 +8,17 @@ from typing import Dict, Any, List, Optional
 import logging
 
 # Setup paths for imports
-base_dir = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(base_dir / "03_BlockImport"))
-sys.path.insert(0, str(base_dir / "04_BlockExport"))
+base_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(base_dir / "lib" / "converters"))
+sys.path.insert(0, str(base_dir / "lib"))
 
 # Import block operation modules
 try:
     from BlockImport import import_block_from_xml
     from BlockExport import export_block_to_xml, export_all_blocks, clean_exported_blocks_folder
 except ImportError as e:
-    print(f"Error importing block operation modules: {e}")
+    import logging
+    logging.getLogger(__name__).error(f"Error importing block operation modules: {e}")
     raise
 
 logger = logging.getLogger(__name__)
@@ -128,18 +129,18 @@ def _ensure_folder_exists(plc_software, folder_name, subfolder_name=None):
         user_group = user_groups.find(folder_name)
         if not user_group or not user_group.value:
             # Create main folder
-            print(f"Creating folder '{folder_name}'...")
+            logger.info(f"Creating folder '{folder_name}'...")
             try:
                 new_group = user_groups.create(folder_name)
                 if not new_group:
-                    print(f"Failed to create folder '{folder_name}'")
+                    logger.error(f"Failed to create folder '{folder_name}'")
                     return False
-                print(f"Successfully created folder '{folder_name}'")
+                logger.info(f"Successfully created folder '{folder_name}'")
                 user_group = new_group
             except Exception as e:
-                print(f"Error creating folder '{folder_name}': {str(e)}")
+                logger.error(f"Error creating folder '{folder_name}': {str(e)}")
                 return False
-        
+
         # If subfolder specified, check/create it
         if subfolder_name:
             try:
@@ -147,24 +148,24 @@ def _ensure_folder_exists(plc_software, folder_name, subfolder_name=None):
                 sub_group = parent_groups.find(subfolder_name)
                 if not sub_group or not sub_group.value:
                     # Create subfolder
-                    print(f"Creating subfolder '{subfolder_name}' in '{folder_name}'...")
+                    logger.info(f"Creating subfolder '{subfolder_name}' in '{folder_name}'...")
                     try:
                         new_sub_group = parent_groups.create(subfolder_name)
                         if not new_sub_group:
-                            print(f"Failed to create subfolder '{subfolder_name}'")
+                            logger.error(f"Failed to create subfolder '{subfolder_name}'")
                             return False
-                        print(f"Successfully created subfolder '{subfolder_name}'")
+                        logger.info(f"Successfully created subfolder '{subfolder_name}'")
                     except Exception as e:
-                        print(f"Error creating subfolder '{subfolder_name}': {str(e)}")
+                        logger.error(f"Error creating subfolder '{subfolder_name}': {str(e)}")
                         return False
             except Exception as e:
-                print(f"Error accessing parent folder '{folder_name}': {str(e)}")
+                logger.error(f"Error accessing parent folder '{folder_name}': {str(e)}")
                 return False
-        
+
         return True
-        
+
     except Exception as e:
-        print(f"Error ensuring folder exists: {str(e)}")
+        logger.error(f"Error ensuring folder exists: {str(e)}")
         return False
 
 
@@ -268,7 +269,7 @@ def _export_all_blocks_comprehensive(plc_software, export_base_path):
     except Exception as e:
         logger.error(f"Error in comprehensive export: {str(e)}")
         import traceback
-        traceback.print_exc()
+        logger.debug(traceback.format_exc())
         return 0
 
 

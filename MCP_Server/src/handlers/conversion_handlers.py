@@ -9,9 +9,8 @@ from typing import Dict, Any, List, Optional
 import logging
 
 # Setup paths for imports
-base_dir = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(base_dir / "02_FileConverter"))
-sys.path.insert(0, str(base_dir / "MCP_Server" / "lib" / "converters"))
+base_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(base_dir / "lib" / "converters"))
 
 # Import conversion modules
 try:
@@ -22,7 +21,8 @@ try:
     from plc_tag_converter import PLCTagConverter
     from udt_converter import UDTConverter
 except ImportError as e:
-    print(f"Error importing conversion modules: {e}")
+    import logging
+    logging.getLogger(__name__).error(f"Error importing conversion modules: {e}")
     raise
 
 logger = logging.getLogger(__name__)

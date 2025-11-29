@@ -4,10 +4,13 @@ TIA Portal Client Wrapper with Async Support
 import asyncio
 import sys
 import os
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional, Dict, List, Callable
 from pathlib import Path
 import traceback
+
+logger = logging.getLogger(__name__)
 
 # Setup import paths using MCP configuration
 from mcp_config import get_mcp_config
@@ -26,9 +29,8 @@ except Exception as e:
 try:
     import tia_portal
 except ImportError as e:
-    print(f"Error: Could not import tia_portal: {e}")
-    print(f"Attempted to add path: {tia_client_path}")
-    print(f"Current sys.path: {sys.path[:3]}...")  # Show first 3 paths
+    logger.error(f"Could not import tia_portal: {e}")
+    logger.error(f"Current sys.path: {sys.path[:3]}...")  # Show first 3 paths
     sys.exit(1)
 
 class TIAClientWrapper:
@@ -63,8 +65,8 @@ class TIAClientWrapper:
             )
             return result
         except Exception as e:
-            print(f"Error executing {func.__name__}: {str(e)}")
-            traceback.print_exc()
+            logger.error(f"Error executing {func.__name__}: {str(e)}")
+            logger.debug(traceback.format_exc())
             raise
     
     async def connect(self) -> bool:
@@ -80,10 +82,10 @@ class TIAClientWrapper:
             
             result = await self.execute_sync(_connect)
             self.is_connected = result
-            print("Successfully connected to TIA Portal")
+            logger.info("Successfully connected to TIA Portal")
             return result
         except Exception as e:
-            print(f"Failed to connect to TIA Portal: {e}")
+            logger.error(f"Failed to connect to TIA Portal: {e}")
             self.is_connected = False
             return False
     
@@ -106,7 +108,7 @@ class TIAClientWrapper:
                 result = await self.execute_sync(_disconnect)
                 self.client = None
                 self.is_connected = False
-                print("Disconnected from TIA Portal")
+                logger.info("Disconnected from TIA Portal")
 
                 # Add delay to ensure COM resources are fully released
                 # This prevents race conditions during rapid reconnects
@@ -116,7 +118,7 @@ class TIAClientWrapper:
                 return result
             return True
         except Exception as e:
-            print(f"Error during disconnect: {e}")
+            logger.error(f"Error during disconnect: {e}")
             return False
     
     async def open_project(self, project_path: str, project_name: Optional[str] = None) -> Dict[str, Any]:
@@ -155,7 +157,7 @@ class TIAClientWrapper:
                     else:
                         proj_name = project_name
                 
-                print(f"Opening project: {proj_name} from {store_path}")
+                logger.info(f"Opening project: {proj_name} from {store_path}")
                 self.project = self.client.open_project(store_path, proj_name)
                 
                 return {
@@ -166,11 +168,11 @@ class TIAClientWrapper:
                 }
             
             result = await self.execute_sync(_open_project)
-            print(f"Project opened successfully: {result['project_name']}")
+            logger.info(f"Project opened successfully: {result['project_name']}")
             return result
-            
+
         except Exception as e:
-            print(f"Failed to open project: {e}")
+            logger.error(f"Failed to open project: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -194,11 +196,11 @@ class TIAClientWrapper:
                 return True
             
             await self.execute_sync(_save_project)
-            print("Project saved successfully")
+            logger.info("Project saved successfully")
             return {"success": True}
-            
+
         except Exception as e:
-            print(f"Failed to save project: {e}")
+            logger.error(f"Failed to save project: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -220,11 +222,11 @@ class TIAClientWrapper:
             
             await self.execute_sync(_close_project)
             self.project = None
-            print("Project closed successfully")
+            logger.info("Project closed successfully")
             return {"success": True}
-            
+
         except Exception as e:
-            print(f"Failed to close project: {e}")
+            logger.error(f"Failed to close project: {e}")
             return {
                 "success": False, 
                 "error": str(e)
@@ -262,9 +264,9 @@ class TIAClientWrapper:
                 "success": True,
                 "project_info": info
             }
-            
+
         except Exception as e:
-            print(f"Failed to get project info: {e}")
+            logger.error(f"Failed to get project info: {e}")
             return {
                 "success": False,
                 "error": str(e)

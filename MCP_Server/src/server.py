@@ -31,11 +31,13 @@ from handlers.compilation_handlers import CompilationHandlers
 from handlers.conversion_handlers import ConversionHandlers
 from handlers.tag_handlers import TagHandlers
 from handlers.udt_handlers import UDTHandlers
+from handlers.analysis_handlers import ProjectAnalyzer
 
-# Configure logging
+# Configure logging - MUST use stderr since stdout is used for MCP JSON-RPC protocol
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stderr  # Critical: MCP uses stdout for JSON-RPC, logs must go to stderr
 )
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,81 @@ class TIAPortalMCPServer:
                 types.Tool(
                     name="get_project_info",
                     description="Get information about the current project",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            }
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
+                # Analysis tools
+                types.Tool(
+                    name="analyze_project_structure",
+                    description="Get a lightweight tree structure of the project",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            }
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
+                types.Tool(
+                    name="read_project_source",
+                    description="Get concatenated SCL code for selected blocks",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "block_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Specific list of block names to retrieve (optional)"
+                            },
+                            "folder_filter": {
+                                "type": "string",
+                                "description": "Filter by folder name e.g. 'Motors' (optional)"
+                            },
+                            "type_filter": {
+                                "type": "string",
+                                "description": "Filter by block type e.g. 'FB', 'DB' (optional)"
+                            },
+                            "use_cache": {
+                                "type": "boolean",
+                                "description": "Whether to use cached files",
+                                "default": True
+                            }
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
+                types.Tool(
+                    name="cache_project_data",
+                    description="Bulk export and cache all project blocks for faster analysis",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            }
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
+                types.Tool(
+                    name="clear_cache",
+                    description="Clear session cache",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -779,6 +856,41 @@ class TIAPortalMCPServer:
             
             return result
         
+        # Analysis tools
+        elif tool_name == "analyze_project_structure":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {"success": False, "error": "Session not found"}
+            
+            return await ProjectAnalyzer.analyze_project_structure(session)
+            
+        elif tool_name == "read_project_source":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {"success": False, "error": "Session not found"}
+            
+            return await ProjectAnalyzer.get_flat_code_summary(
+                session,
+                arguments.get("block_names"),
+                arguments.get("folder_filter"),
+                arguments.get("type_filter"),
+                arguments.get("use_cache", True)
+            )
+            
+        elif tool_name == "cache_project_data":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {"success": False, "error": "Session not found"}
+            
+            return await ProjectAnalyzer.cache_project_data(session)
+            
+        elif tool_name == "clear_cache":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {"success": False, "error": "Session not found"}
+            
+            return await ProjectAnalyzer.clear_cache(session)
+
         # Block operation tools
         elif tool_name == "import_blocks":
             session = await self.session_manager.get_session(arguments["session_id"])
