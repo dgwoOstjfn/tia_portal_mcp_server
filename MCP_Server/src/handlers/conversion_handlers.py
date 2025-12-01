@@ -505,11 +505,11 @@ class ConversionHandlers:
     def convert_udt_to_xml(self, udt_file_path: str, output_path: str = None) -> Dict[str, Any]:
         """
         Convert .udt file to UDT XML format
-        
+
         Args:
             udt_file_path: Path to input .udt file
             output_path: Path for output XML file (optional)
-            
+
         Returns:
             Dictionary with conversion result
         """
@@ -519,12 +519,12 @@ class ConversionHandlers:
                     "success": False,
                     "error": f"UDT file not found: {udt_file_path}"
                 }
-            
+
             logger.info(f"Converting .udt to UDT XML: {udt_file_path}")
-            
+
             # Perform conversion
             result_file = self.udt_converter.udt_to_xml(udt_file_path, output_path)
-            
+
             if result_file:
                 return {
                     "success": True,
@@ -536,10 +536,116 @@ class ConversionHandlers:
                     "success": False,
                     "error": ".udt to UDT XML conversion failed"
                 }
-                
+
         except Exception as e:
             logger.error(f"Error in .udt to UDT XML conversion: {e}")
             return {
                 "success": False,
                 "error": f".udt to UDT XML conversion error: {str(e)}"
+            }
+
+    def convert_scl_string_to_xml(self, scl_content: str, output_path: str, temp_dir: str = None) -> Dict[str, Any]:
+        """
+        Convert SCL string content directly to TIA Portal XML format
+        This method enables direct SCL-to-XML conversion without requiring file system access
+        from the MCP client side (e.g., Claude Desktop's Linux environment).
+
+        Pipeline: SCL string -> temp file -> JSON -> XML
+
+        Args:
+            scl_content: SCL source code as string
+            output_path: Path for output XML file
+            temp_dir: Directory for temporary files (optional, uses system temp if not provided)
+
+        Returns:
+            Dictionary with conversion result including the output XML file path
+        """
+        import tempfile
+        import uuid
+
+        try:
+            if not scl_content or not scl_content.strip():
+                return {
+                    "success": False,
+                    "error": "SCL content is empty"
+                }
+
+            if not output_path:
+                return {
+                    "success": False,
+                    "error": "Output path is required"
+                }
+
+            logger.info(f"Converting SCL string to XML (content length: {len(scl_content)} chars)")
+
+            # Determine temp directory
+            # Prefer project-local temp to avoid system permission issues
+            if temp_dir:
+                os.makedirs(temp_dir, exist_ok=True)
+                working_temp_dir = temp_dir
+            else:
+                # Try project-local temp first, fall back to system temp
+                project_temp_dir = Path(__file__).parent.parent.parent / "temp" / "scl_convert"
+                try:
+                    project_temp_dir.mkdir(parents=True, exist_ok=True)
+                    working_temp_dir = str(project_temp_dir)
+                except (PermissionError, OSError) as e:
+                    logger.warning(f"Could not use project temp directory, falling back to system temp: {e}")
+                    working_temp_dir = tempfile.gettempdir()
+
+            # Generate unique temp file names
+            unique_id = str(uuid.uuid4())[:8]
+            temp_scl_file = os.path.join(working_temp_dir, f"temp_scl_{unique_id}.scl")
+            temp_json_file = os.path.join(working_temp_dir, f"temp_json_{unique_id}.json")
+
+            try:
+                # Step 1: Write SCL content to temporary file
+                logger.debug(f"Writing SCL to temp file: {temp_scl_file}")
+                with open(temp_scl_file, 'w', encoding='utf-8') as f:
+                    f.write(scl_content)
+
+                # Step 2: Convert SCL to JSON
+                logger.debug(f"Converting SCL to JSON: {temp_scl_file} -> {temp_json_file}")
+                scl_to_json_result = self.convert_scl_to_json(temp_scl_file, temp_json_file)
+                if not scl_to_json_result["success"]:
+                    return {
+                        "success": False,
+                        "error": f"SCL to JSON conversion failed: {scl_to_json_result.get('error', 'Unknown error')}"
+                    }
+
+                # Step 3: Convert JSON to XML
+                logger.debug(f"Converting JSON to XML: {temp_json_file} -> {output_path}")
+                json_to_xml_result = self.convert_json_to_xml(temp_json_file, output_path)
+                if not json_to_xml_result["success"]:
+                    return {
+                        "success": False,
+                        "error": f"JSON to XML conversion failed: {json_to_xml_result.get('error', 'Unknown error')}"
+                    }
+
+                # Get absolute path for consistency
+                output_file = os.path.abspath(output_path)
+
+                return {
+                    "success": True,
+                    "output_file": output_file,
+                    "message": f"Successfully converted SCL string to XML: {output_file}"
+                }
+
+            finally:
+                # Clean up temporary files
+                for temp_file in [temp_scl_file, temp_json_file]:
+                    try:
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                            logger.debug(f"Cleaned up temp file: {temp_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove temporary file {temp_file}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in SCL string to XML conversion: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return {
+                "success": False,
+                "error": f"SCL string to XML conversion error: {str(e)}"
             }

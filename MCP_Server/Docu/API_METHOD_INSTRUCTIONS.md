@@ -17,10 +17,10 @@
 
 This document provides comprehensive instructions for using all available MCP tools/methods in the TIA Portal MCP Server. Each method includes interface descriptions, parameters, types, practical examples, and expected responses.
 
-The server provides **29 MCP tools** organized into 7 categories:
+The server provides **30 MCP tools** organized into 7 categories:
 - **Session Management** (3 tools)
-- **Project Operations** (4 tools) 
-- **Block Operations** (3 tools)
+- **Project Operations** (4 tools)
+- **Block Operations** (4 tools)
 - **Compilation Operations** (4 tools)
 - **File Conversion Operations** (10 tools)
 - **PLC Tag Operations** (4 tools)
@@ -488,6 +488,117 @@ export_all = await call_tool("export_blocks", {
     "session_id": session_id
 })
 ```
+
+### 11. create_block_from_scl
+
+Creates a TIA Portal block directly from SCL source code string. This tool accepts SCL code as a string parameter, converts it to TIA Portal XML format, and imports it into the project. This eliminates the need for file system access from MCP clients (e.g., Claude Desktop's sandboxed Linux environment).
+
+**Parameters:**
+- `session_id` (required): `string` - Session ID
+- `scl_content` (required): `string` - SCL source code as string (complete block definition including FUNCTION_BLOCK, VAR sections, and BEGIN...END_FUNCTION_BLOCK)
+- `target_folder` (optional): `string` - Target folder in PLC software
+- `block_name` (optional): `string` - Block name override (extracted from SCL if not provided)
+
+**Interface:**
+```json
+{
+  "name": "create_block_from_scl",
+  "arguments": {
+    "session_id": "uuid-string-12345",
+    "scl_content": "FUNCTION_BLOCK \"FB_Motor\"\nVAR_INPUT\n    Enable : Bool;\nEND_VAR\nBEGIN\n    // Motor control logic\nEND_FUNCTION_BLOCK",
+    "target_folder": "Motors"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully created block 'FB_Motor' from SCL",
+  "block_name": "FB_Motor",
+  "target_folder": "Motors",
+  "import_result": {
+    "success": true,
+    "imported": [
+      {
+        "path": "C:\\temp\\FB_Motor.xml",
+        "block_name": "FB_Motor",
+        "folder": "Motors",
+        "subfolder": null
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "total": 1,
+      "imported": 1,
+      "failed": 0
+    }
+  }
+}
+```
+
+**Example Usage:**
+```python
+# Create a function block from SCL code
+scl_code = '''FUNCTION_BLOCK "FB_Conveyor"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+
+VAR_INPUT
+    Start : Bool;
+    Stop : Bool;
+    Speed : Real;
+END_VAR
+
+VAR_OUTPUT
+    Running : Bool;
+    CurrentSpeed : Real;
+END_VAR
+
+VAR
+    internalState : Int;
+END_VAR
+
+BEGIN
+    IF #Start AND NOT #Stop THEN
+        #Running := TRUE;
+        #CurrentSpeed := #Speed;
+        #internalState := 1;
+    ELSIF #Stop THEN
+        #Running := FALSE;
+        #CurrentSpeed := 0.0;
+        #internalState := 0;
+    END_IF;
+END_FUNCTION_BLOCK
+'''
+
+result = await call_tool("create_block_from_scl", {
+    "session_id": session_id,
+    "scl_content": scl_code,
+    "target_folder": "Conveyors"
+})
+
+if result["success"]:
+    print(f"Created block: {result['block_name']}")
+else:
+    print(f"Failed: {result.get('error', 'Unknown error')}")
+
+# Create block with explicit name override
+result = await call_tool("create_block_from_scl", {
+    "session_id": session_id,
+    "scl_content": scl_code,
+    "block_name": "FB_ConveyorV2",
+    "target_folder": "Conveyors/Version2"
+})
+```
+
+**Notes:**
+- The SCL content must be a complete block definition
+- Block name is automatically extracted from `FUNCTION_BLOCK "BlockName"` if not provided
+- Supports FUNCTION_BLOCK (FB) type blocks
+- All temporary files are automatically cleaned up after import
+- The block is compiled after import to verify syntax
 
 ---
 
@@ -1570,7 +1681,7 @@ if result:
 |----------|-------|-------------|
 | **Session** | `create_session`, `close_session`, `list_sessions` | Manage TIA Portal sessions |
 | **Project** | `open_project`, `save_project`, `close_project`, `get_project_info` | Project lifecycle management |
-| **Blocks** | `list_blocks`, `import_blocks`, `export_blocks` | Block operations and management |
+| **Blocks** | `list_blocks`, `import_blocks`, `export_blocks`, `create_block_from_scl` | Block operations and management |
 | **Compilation** | `compile_project`, `compile_device`, `compile_block`, `get_compilation_errors` | Compilation and error checking |
 | **Conversion** | `convert_xml_to_json`, `convert_json_to_xml`, `convert_json_to_scl`, `convert_scl_to_json`, `convert_xml_to_scl`, `convert_scl_to_xml` | File format conversions |
 | **Tags** | `export_all_tag_tables`, `export_specific_tag_tables`, `list_tag_tables`, `get_tag_table_details` | PLC tag table operations |
@@ -1609,6 +1720,43 @@ if not compile_result["compilation_result"]:
 # Convert XML → JSON → SCL
 json_result = await call_tool("convert_xml_to_json", {"xml_file_path": "block.xml"})
 scl_result = await call_tool("convert_json_to_scl", {"json_file_path": json_result["output_file"]})
+```
+
+#### 5. Create Block from SCL Code (AI-Assisted Development)
+```python
+# Generate and create a new function block directly from SCL code
+# This is ideal for AI-assisted development where blocks are generated programmatically
+scl_code = '''FUNCTION_BLOCK "FB_GeneratedBlock"
+VAR_INPUT
+    Enable : Bool;
+    SetPoint : Real;
+END_VAR
+VAR_OUTPUT
+    Active : Bool;
+    ProcessValue : Real;
+END_VAR
+BEGIN
+    IF #Enable THEN
+        #Active := TRUE;
+        #ProcessValue := #SetPoint * 1.0;
+    ELSE
+        #Active := FALSE;
+    END_IF;
+END_FUNCTION_BLOCK
+'''
+
+result = await call_tool("create_block_from_scl", {
+    "session_id": session_id,
+    "scl_content": scl_code,
+    "target_folder": "Generated"
+})
+
+# Compile the new block to verify
+if result["success"]:
+    await call_tool("compile_block", {
+        "session_id": session_id,
+        "block_name": result["block_name"]
+    })
 ```
 
 This comprehensive API reference provides developers with all necessary information to effectively use the TIA Portal MCP Server tools for automation and integration tasks.

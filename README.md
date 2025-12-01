@@ -78,6 +78,45 @@ This design ensures the server works correctly regardless of where you run Claud
 - V19
 - V20
 
+## Available Tools
+
+The server provides **30+ MCP tools** organized into categories:
+
+- **Session Management**: `create_session`, `close_session`, `list_sessions`
+- **Project Operations**: `open_project`, `save_project`, `close_project`, `get_project_info`
+- **Block Operations**: `list_blocks`, `import_blocks`, `export_blocks`, `create_block_from_scl`
+- **Compilation**: `compile_project`, `compile_device`, `compile_block`, `get_compilation_errors`
+- **File Conversions**: XML/JSON/SCL format conversions, PLC tag Excel conversions, UDT conversions
+- **PLC Tags**: `list_tag_tables`, `export_all_tag_tables`, `export_specific_tag_tables`, `get_tag_table_details`
+- **UDTs**: `discover_all_udts`, `export_all_udts`, `export_specific_udts`, `generate_udt_source`
+
+### Key Feature: Create Blocks from SCL String
+
+The `create_block_from_scl` tool allows you to create TIA Portal blocks directly from SCL source code passed as a string parameter. This eliminates the need for file system access from MCP clients (e.g., Claude Desktop's sandboxed environment).
+
+```python
+# Example: Create a function block from SCL code
+result = await call_tool("create_block_from_scl", {
+    "session_id": "your-session-id",
+    "scl_content": """FUNCTION_BLOCK "FB_MyBlock"
+VAR_INPUT
+    Enable : Bool;
+    SetValue : Real;
+END_VAR
+VAR_OUTPUT
+    Done : Bool;
+END_VAR
+BEGIN
+    IF #Enable THEN
+        #Done := TRUE;
+    END_IF;
+END_FUNCTION_BLOCK
+""",
+    "target_folder": "MyBlocks"  # Optional
+})
+```
+
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
+- [CLAUDE.md](CLAUDE.md) - Development documentation
+- [MCP_Server/Docu/API_METHOD_INSTRUCTIONS.md](MCP_Server/Docu/API_METHOD_INSTRUCTIONS.md) - Complete API reference

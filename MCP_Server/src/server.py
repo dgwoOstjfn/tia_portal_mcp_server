@@ -670,6 +670,33 @@ class TIAPortalMCPServer:
                         },
                         "required": ["session_id", "udt_names", "output_path"]
                     }
+                ),
+                # Block creation from SCL string
+                types.Tool(
+                    name="create_block_from_scl",
+                    description="Create a TIA Portal block from SCL source code string. Converts SCL to XML and imports into project. This tool accepts SCL code directly as a string parameter, eliminating the need for file system access from the MCP client.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "scl_content": {
+                                "type": "string",
+                                "description": "SCL source code as string (complete block definition including FUNCTION_BLOCK, VAR sections, and BEGIN...END_FUNCTION_BLOCK)"
+                            },
+                            "target_folder": {
+                                "type": "string",
+                                "description": "Target folder in PLC software (optional)"
+                            },
+                            "block_name": {
+                                "type": "string",
+                                "description": "Block name override (optional, extracted from SCL if not provided)"
+                            }
+                        },
+                        "required": ["session_id", "scl_content"]
+                    }
                 )
             ]
         
@@ -1148,7 +1175,7 @@ class TIAPortalMCPServer:
                     "success": False,
                     "error": "Session not found"
                 }
-            
+
             result = UDTHandlers.generate_udt_source(
                 session.client_wrapper,
                 arguments["session_id"],
@@ -1158,7 +1185,105 @@ class TIAPortalMCPServer:
             )
             session.update_activity()
             return result
-        
+
+        elif tool_name == "create_block_from_scl":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {
+                    "success": False,
+                    "error": "Session not found"
+                }
+
+            if not session.client_wrapper.project:
+                return {
+                    "success": False,
+                    "error": "No project is open"
+                }
+
+            scl_content = arguments.get("scl_content", "")
+            target_folder = arguments.get("target_folder")
+            block_name_override = arguments.get("block_name")
+
+            # Extract block name from SCL if not provided
+            import re
+            block_name = block_name_override
+            if not block_name:
+                fb_match = re.search(r'FUNCTION_BLOCK\s+"([^"]+)"', scl_content)
+                if fb_match:
+                    block_name = fb_match.group(1)
+                else:
+                    return {
+                        "success": False,
+                        "error": "Could not extract block name from SCL content and no block_name provided"
+                    }
+
+            # Create temp directory for XML output
+            # Use project-local temp directory to avoid system permission issues
+            import tempfile
+            import os
+
+            # Try project-local temp first, fall back to system temp
+            project_temp_dir = Path(__file__).parent.parent.parent / "temp" / "scl_import"
+            try:
+                project_temp_dir.mkdir(parents=True, exist_ok=True)
+                temp_dir = tempfile.mkdtemp(prefix="tia_scl_", dir=str(project_temp_dir))
+            except (PermissionError, OSError) as e:
+                logger.warning(f"Could not use project temp directory, falling back to system temp: {e}")
+                temp_dir = tempfile.mkdtemp(prefix="tia_scl_")
+
+            xml_output_path = os.path.join(temp_dir, f"{block_name}.xml")
+            logger.debug(f"Using temp directory: {temp_dir}")
+
+            try:
+                # Step 1: Convert SCL string to XML
+                conversion_result = self.conversion_handlers.convert_scl_string_to_xml(
+                    scl_content,
+                    xml_output_path,
+                    temp_dir
+                )
+
+                if not conversion_result["success"]:
+                    return {
+                        "success": False,
+                        "error": f"SCL to XML conversion failed: {conversion_result.get('error', 'Unknown error')}"
+                    }
+
+                # Step 2: Import the XML into the project
+                import_result = await BlockHandlers.import_blocks(
+                    session,
+                    [xml_output_path],
+                    target_folder,
+                    preserve_structure=False
+                )
+
+                session.update_activity()
+
+                # Combine results
+                if import_result["success"]:
+                    return {
+                        "success": True,
+                        "message": f"Successfully created block '{block_name}' from SCL",
+                        "block_name": block_name,
+                        "target_folder": target_folder,
+                        "import_result": import_result
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Block import failed: {import_result.get('error', 'Unknown error')}",
+                        "conversion_succeeded": True,
+                        "import_errors": import_result.get("errors", [])
+                    }
+
+            finally:
+                # Clean up temp directory
+                import shutil
+                try:
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+                except Exception as e:
+                    logger.warning(f"Could not clean up temp directory {temp_dir}: {e}")
+
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
     

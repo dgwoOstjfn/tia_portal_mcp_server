@@ -179,18 +179,28 @@ def _export_block_direct(plc_software, block_info, export_base_path):
         else:
             # Root level block
             target_dir = export_base_path
-        
+
         # Ensure directory exists
         os.makedirs(target_dir, exist_ok=True)
-        
+
         # Create the export file path
         export_file_path = os.path.join(target_dir, f"{block_info['name']}.xml")
-        
+
         # Get the block object and export it
         block = block_info['block_object']
-        
+
         logger.debug(f"Exporting block '{block_info['name']}' to {export_file_path}")
-        
+
+        # Clean up any existing temporary file before export
+        # TIA Portal API exports to ~/.tia_portal/exported_blocks/ and fails if file exists
+        temp_export_path = os.path.join(os.path.expanduser("~"), ".tia_portal", "exported_blocks", f"{block_info['name']}.xml")
+        if os.path.exists(temp_export_path):
+            try:
+                os.remove(temp_export_path)
+                logger.debug(f"Removed existing temp file: {temp_export_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temp file {temp_export_path}: {e}")
+
         # Export the block using the TIA Portal API
         exported_file = block.export()
         
@@ -464,29 +474,50 @@ class BlockHandlers:
                 # Export specific blocks
                 exported_blocks = []
                 errors = []
-                
+
+                # First, get all blocks with their folder info to enable searching by name
+                def _get_all_blocks_info():
+                    return _get_all_blocks_comprehensive(plc_software)
+
+                all_blocks_info = await session.client_wrapper.execute_sync(_get_all_blocks_info)
+
+                # Create a lookup by block name
+                block_lookup = {}
+                for block_info in all_blocks_info:
+                    block_lookup[block_info['name']] = block_info
+
                 for block_name in block_names:
                     try:
-                        def _export_block():
-                            return export_block_to_xml(
-                                plc_software,
-                                block_name,
-                                str(output_dir)
-                            )
-                        
-                        file_path = await session.client_wrapper.execute_sync(_export_block)
-                        
-                        if file_path:  # export_block_to_xml returns str path or None
+                        # Look up the block info to get folder location
+                        if block_name not in block_lookup:
+                            errors.append({
+                                "block_name": block_name,
+                                "error": f"Block '{block_name}' not found in project"
+                            })
+                            continue
+
+                        block_info = block_lookup[block_name]
+
+                        # Use _export_block_direct which already has the block object
+                        # This avoids the folder depth limitation in export_block_to_xml
+                        def _export_single(info=block_info):
+                            return _export_block_direct(plc_software, info, str(output_dir))
+
+                        file_path = await session.client_wrapper.execute_sync(_export_single)
+
+                        if file_path:
                             exported_blocks.append({
                                 "block_name": block_name,
-                                "file_path": file_path
+                                "file_path": file_path,
+                                "path": block_info.get('path', '/'),
+                                "export_path": block_info.get('export_path', '')
                             })
                         else:
                             errors.append({
                                 "block_name": block_name,
-                                "error": "Export failed"
+                                "error": "Export failed - block may have compilation errors"
                             })
-                            
+
                     except Exception as e:
                         errors.append({
                             "block_name": block_name,
