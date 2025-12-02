@@ -29,7 +29,10 @@ class TIAXMLGenerator:
             'FOR', 'TO', 'BY', 'DO', 'END_FOR', 'WHILE', 'END_WHILE',
             'REPEAT', 'UNTIL', 'END_REPEAT', 'EXIT', 'CONTINUE', 'RETURN',
             'TRUE', 'FALSE', 'AND', 'OR', 'XOR', 'NOT', 'REGION', 'END_REGION',
-            'ABS', 'MIN', 'MAX'
+            'ABS', 'MIN', 'MAX', 'LIMIT', 'SEL', 'MUX',
+            'SHR', 'SHL', 'ROR', 'ROL',
+            'FIND', 'REPLACE', 'DELETE', 'INSERT', 'LEFT', 'RIGHT', 'MID', 'LEN', 'CONCAT',
+            'SQRT', 'SIN', 'COS', 'TAN', 'EXP', 'LN', 'LOG'
         ]
 
     def get_next_uid(self) -> str:
@@ -61,6 +64,16 @@ class TIAXMLGenerator:
                     space_count += 1
                     i += 1
                 tokens.append(('WHITESPACE', str(space_count)))
+                continue
+
+            # Handle addresses and slice access (starting with %)
+            if line[i] == '%':
+                addr_str = '%'
+                i += 1
+                while i < len(line) and (line[i].isalnum() or line[i] == '.'):
+                    addr_str += line[i]
+                    i += 1
+                tokens.append(('ADDRESS', addr_str))
                 continue
 
             # Check for multi-character operators (sorted by length, longest first)
@@ -152,38 +165,125 @@ class TIAXMLGenerator:
 
             tokens = self.tokenize_scl_line(line)
 
-            for token_type, token_value in tokens:
+            i = 0
+            while i < len(tokens):
+                token_type, token_value = tokens[i]
+
                 if token_type == 'WHITESPACE':
                     # Handle whitespace
                     if token_value == '1':
                         xml_elements.append(f'  <Blank UId="{self.get_next_uid()}" />')
                     else:
                         xml_elements.append(f'  <Blank Num="{token_value}" UId="{self.get_next_uid()}" />')
+                    i += 1
 
                 elif token_type in ['KEYWORD', 'OPERATOR']:
                     # Keywords and operators as tokens
                     xml_elements.append(f'  <Token Text="{self.escape_xml(token_value)}" UId="{self.get_next_uid()}" />')
+                    i += 1
 
-                elif token_type == 'VARIABLE':
-                    # Variable access - determine scope based on prefix and content
+                elif token_type == 'VARIABLE' or token_type == 'ADDRESS':
+                    # Variable access - start a Symbol sequence
+                    # We need to look ahead for dots and members/addresses to build a complete Symbol
+
+                    # Initial variable/address handling
                     var_name = token_value
                     scope = "LocalVariable"  # Default scope
 
-                    # Remove # prefix for component name but keep scope info
-                    if var_name.startswith('#'):
-                        var_name = var_name[1:]
-                        scope = "LocalVariable"
-                    elif var_name.startswith('"') and var_name.endswith('"'):
-                        scope = "GlobalVariable"
-                        var_name = var_name[1:-1]  # Remove quotes for component name
+                    if token_type == 'VARIABLE':
+                        # Remove # prefix for component name but keep scope info
+                        if var_name.startswith('#'):
+                            var_name = var_name[1:]
+                            scope = "LocalVariable"
+                        elif var_name.startswith('"') and var_name.endswith('"'):
+                            scope = "GlobalVariable"
+                            var_name = var_name[1:-1]  # Remove quotes for component name
+                    else:
+                        # Direct address like %I0.0 or %X0
+                        scope = "GlobalVariable" # Addresses are typically global or direct access
 
                     access_uid = self.get_next_uid()
                     symbol_uid = self.get_next_uid()
-                    component_uid = self.get_next_uid()
-
+                    
                     xml_elements.append(f'  <Access Scope="{scope}" UId="{access_uid}">')
                     xml_elements.append(f'    <Symbol UId="{symbol_uid}">')
-                    xml_elements.append(f'      <Component Name="{self.escape_xml(var_name)}" UId="{component_uid}" />')
+                    
+                    if token_type == 'VARIABLE':
+                        component_uid = self.get_next_uid()
+                        xml_elements.append(f'      <Component Name="{self.escape_xml(var_name)}" UId="{component_uid}" />')
+                    else:
+                        # Address as token inside Symbol (like %X0)
+                        token_uid = self.get_next_uid()
+                        xml_elements.append(f'      <Token Text="{self.escape_xml(var_name)}" UId="{token_uid}" />')
+                    
+                    i += 1
+
+                    # Look ahead for .Member or .%Address
+                    while i < len(tokens):
+                        # Check for dot operator
+                        next_type, next_val = tokens[i]
+                        
+                        # Skip whitespace in lookahead but we need to decide if whitespace breaks a symbol chain
+                        # In SCL "Var . Member" is valid but rare. Usually "Var.Member".
+                        # For now, if we see whitespace, we'll process it if it's followed by a dot,
+                        # but if we are expecting a member and see whitespace, it's tricky.
+                        # Simplification: If we see a DOT, we continue the chain.
+                        
+                        is_dot = False
+                        whitespace_idx = -1
+                        
+                        # Peek ahead skipping whitespace to find DOT
+                        temp_i = i
+                        while temp_i < len(tokens) and tokens[temp_i][0] == 'WHITESPACE':
+                            temp_i += 1
+                        
+                        if temp_i < len(tokens) and tokens[temp_i][0] == 'OPERATOR' and tokens[temp_i][1] == '.':
+                            # Found a dot! Consume intervening whitespace (if any) as Blanks inside Access?? 
+                            # Actually TIA XML usually puts Blanks OUTSIDE the Access/Symbol for "Var . Member".
+                            # But "Var.Member" is one Access.
+                            # If there is whitespace, it might be safer to break the chain unless we are sure.
+                            # However, strictly speaking, Var.Member is one symbol path.
+                            
+                            # Let's support standard Var.Member without spaces first. 
+                            # If we encounter whitespace immediately after current component, we break the chain
+                            # unless we want to support "Var . Member".
+                            # Based on typical TIA export, it's tight.
+                            pass
+                        
+                        # Current simplified logic: Only extend if immediate DOT
+                        if i < len(tokens) and tokens[i][0] == 'OPERATOR' and tokens[i][1] == '.':
+                            # Add Dot Token
+                            dot_uid = self.get_next_uid()
+                            xml_elements.append(f'      <Token Text="." UId="{dot_uid}" />')
+                            i += 1
+                            
+                            # Now we expect a VARIABLE (Component) or ADDRESS (Token)
+                            if i < len(tokens):
+                                member_type, member_val = tokens[i]
+                                if member_type == 'VARIABLE':
+                                    # It's a component member
+                                    comp_uid = self.get_next_uid()
+                                    # Strip quotes if present (unlikely for member but possible)
+                                    mem_name = member_val
+                                    if mem_name.startswith('"') and mem_name.endswith('"'):
+                                        mem_name = mem_name[1:-1]
+                                    xml_elements.append(f'      <Component Name="{self.escape_xml(mem_name)}" UId="{comp_uid}" />')
+                                    i += 1
+                                elif member_type == 'ADDRESS':
+                                    # It's a slice access like %X0
+                                    tok_uid = self.get_next_uid()
+                                    xml_elements.append(f'      <Token Text="{self.escape_xml(member_val)}" UId="{tok_uid}" />')
+                                    i += 1
+                                else:
+                                    # Trailing dot or unexpected token? 
+                                    # Should not happen in valid code, but we break to be safe
+                                    break
+                            else:
+                                break
+                        else:
+                            # Not a dot, end of symbol chain
+                            break
+
                     xml_elements.append('    </Symbol>')
                     xml_elements.append('  </Access>')
 
