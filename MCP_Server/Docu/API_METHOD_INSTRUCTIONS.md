@@ -599,6 +599,7 @@ result = await call_tool("create_block_from_scl", {
 - Supports FUNCTION_BLOCK (FB) type blocks
 - All temporary files are automatically cleaned up after import
 - The block is compiled after import to verify syntax
+- Supports UDT creation: Wrap content in `TYPE "Name" ... END_TYPE` structure
 
 ---
 
@@ -963,6 +964,11 @@ Converts SCL files to XML format (via intermediate JSON conversion).
   "message": "Successfully converted SCL to XML: D:\\absolute\\path\\to\\FB_Pump.xml"
 }
 ```
+
+**Notes:**
+- Supports FB, FC, OB, DB, and UDT conversion
+- For UDTs, the SCL file must start with `TYPE` keyword
+- Intermediate JSON files are automatically cleaned up
 
 ### 21. convert_plc_tag_xml_to_excel
 

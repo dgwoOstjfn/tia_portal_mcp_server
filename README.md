@@ -80,7 +80,7 @@ This design ensures the server works correctly regardless of where you run Claud
 
 ## Available Tools
 
-The server provides **30+ MCP tools** organized into categories:
+The server provides **35+ MCP tools** organized into categories:
 
 - **Session Management**: `create_session`, `close_session`, `list_sessions`
 - **Project Operations**: `open_project`, `save_project`, `close_project`, `get_project_info`
@@ -88,7 +88,7 @@ The server provides **30+ MCP tools** organized into categories:
 - **Compilation**: `compile_project`, `compile_device`, `compile_block`, `get_compilation_errors`
 - **File Conversions**: XML/JSON/SCL format conversions, PLC tag Excel conversions, UDT conversions
 - **PLC Tags**: `list_tag_tables`, `export_all_tag_tables`, `export_specific_tag_tables`, `get_tag_table_details`
-- **UDTs**: `discover_all_udts`, `export_all_udts`, `export_specific_udts`, `generate_udt_source`
+- **UDTs**: `discover_all_udts`, `export_all_udts`, `export_specific_udts`, `import_udt`
 
 ### Key Feature: Create Blocks from SCL String
 
