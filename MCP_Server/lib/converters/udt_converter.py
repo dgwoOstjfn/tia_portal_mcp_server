@@ -442,25 +442,31 @@ class UDTConverter:
         
         # Add attributes
         attr_list = ET.SubElement(udt_elem, "AttributeList")
-        
+
+        # UDT Name - TIA Portal requires <Name> element in AttributeList
         name_elem = ET.SubElement(attr_list, "Name")
         name_elem.text = udt_data['name']
         
-        if udt_data.get('version'):
-            version_elem = ET.SubElement(attr_list, "Version")
-            version_elem.text = udt_data['version']
+        # Add interface with sections (Must be inside AttributeList after Name)
+        interface = ET.SubElement(attr_list, "Interface")
+        sections = ET.SubElement(interface, "Sections")
+        sections.set("xmlns", "http://www.siemens.com/automation/Openness/SW/Interface/v5")
         
-        if udt_data.get('author'):
-            author_elem = ET.SubElement(attr_list, "Author")
-            author_elem.text = udt_data['author']
+        # Create section for members (UDT uses "None" section)
+        section = ET.SubElement(sections, "Section")
+        section.set("Name", "None")
         
-        if udt_data.get('family'):
-            family_elem = ET.SubElement(attr_list, "Family")
-            family_elem.text = udt_data['family']
+        # Add members
+        for member in udt_data['members']:
+            self._add_member_xml(section, member)
         
-        # Add description as comment
+        # Add Namespace (optional but recommended)
+        ET.SubElement(attr_list, "Namespace")
+
+        # Add description as comment (ObjectList is sibling of AttributeList)
+        obj_list = ET.SubElement(udt_elem, "ObjectList")
+        
         if udt_data.get('description'):
-            obj_list = ET.SubElement(udt_elem, "ObjectList")
             comment = ET.SubElement(obj_list, "MultilingualText")
             comment.set("ID", "1")
             comment.set("CompositionName", "Comment")
@@ -479,18 +485,21 @@ class UDTConverter:
                 text_elem = ET.SubElement(item_attr_list, "Text")
                 text_elem.text = udt_data['description']
         
-        # Add interface with sections
-        interface = ET.SubElement(udt_elem, "Interface")
-        sections = ET.SubElement(interface, "Sections")
-        sections.set("xmlns", "http://www.siemens.com/automation/Openness/SW/Interface/v5")
+        # Add Title (required for some imports)
+        title = ET.SubElement(obj_list, "MultilingualText")
+        # Generate unique ID for Title (avoid conflict with Comment ID 1 and its children)
+        title.set("ID", "10") 
+        title.set("CompositionName", "Title")
+        title_obj_list = ET.SubElement(title, "ObjectList")
+        title_item = ET.SubElement(title_obj_list, "MultilingualTextItem")
+        title_item.set("ID", "11")
+        title_item.set("CompositionName", "Items")
+        title_attr = ET.SubElement(title_item, "AttributeList")
+        ET.SubElement(title_attr, "Culture").text = "en-US"
+        ET.SubElement(title_attr, "Text")
         
-        # Create section for members
-        section = ET.SubElement(sections, "Section")
-        section.set("Name", "Static")
-        
-        # Add members
-        for member in udt_data['members']:
-            self._add_member_xml(section, member)
+        return root
+
         
         return root
     
