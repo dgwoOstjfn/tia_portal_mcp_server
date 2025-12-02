@@ -636,7 +636,7 @@ def json_to_xml(json_file: str, output_xml_file: str = None) -> str:
 
     # Fill template with data
     xml_content = xml_template.format(
-        engineering_version=metadata.get("engineeringVersion", "V17"),
+        engineering_version=metadata.get("engineeringVersion", "V20"),
         sections_xml=sections_xml,
         memory_layout=metadata.get("memoryLayout", "Optimized"),
         memory_reserve=metadata.get("memoryReserve", "100"),

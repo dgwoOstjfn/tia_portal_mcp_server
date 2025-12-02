@@ -274,15 +274,15 @@ class UDTConverter:
         
         return lines
     
-    def udt_to_xml(self, udt_file_path: str, output_path: str = None, 
-                   engineering_version: str = "V17") -> str:
+    def udt_to_xml(self, udt_file_path: str, output_path: str = None,
+                   engineering_version: str = "V20") -> str:
         """
         Convert .udt file to UDT XML format
-        
+
         Args:
             udt_file_path: Path to input .udt file
             output_path: Path for output XML file (optional)
-            engineering_version: TIA Portal version (default: V17)
+            engineering_version: TIA Portal version (default: V20)
             
         Returns:
             Path to generated XML file

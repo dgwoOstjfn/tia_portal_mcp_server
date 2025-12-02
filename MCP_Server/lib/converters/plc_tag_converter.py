@@ -301,16 +301,16 @@ class PLCTagConverter:
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
     
-    def excel_to_xml(self, excel_file_path: str, output_path: str = None, 
-                     table_name: str = None, engineering_version: str = "V17") -> str:
+    def excel_to_xml(self, excel_file_path: str, output_path: str = None,
+                     table_name: str = None, engineering_version: str = "V20") -> str:
         """
         Convert Excel file back to PLC tag table XML format
-        
+
         Args:
             excel_file_path: Path to Excel file to convert
             output_path: Path for output XML file (optional)
             table_name: Name for the tag table (optional)
-            engineering_version: TIA Portal version (default: V17)
+            engineering_version: TIA Portal version (default: V20)
             
         Returns:
             Path to generated XML file
