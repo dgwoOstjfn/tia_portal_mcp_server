@@ -17,16 +17,18 @@ class SCLToJSONConverter:
         self.lines = []
         
     def parse_scl_header(self, content: str) -> Dict[str, str]:
-        """Parse SCL header information"""
+        """Parse SCL header information with support for all block types (FB, FC, OB, DB)"""
         metadata = {
             "blockName": "",
-            "blockNumber": "1", 
+            "blockType": "FB",  # Default to FB, will be detected
+            "blockNumber": "1",
             "programmingLanguage": "SCL",
             "memoryLayout": "Optimized",
             "memoryReserve": "100",
             "enoSetting": "false",
             "engineeringVersion": "V17",
-            "description": "TIA Portal Function Block converted from SCL",
+            "description": "TIA Portal block converted from SCL",
+            "returnType": None,  # For FC return type
             "xmlNamespaceInfo": {
                 "interface": {
                     "namespace": "http://www.siemens.com/automation/Openness/SW/Interface/v5",
@@ -38,28 +40,73 @@ class SCLToJSONConverter:
                 }
             }
         }
-        
-        # Extract block name from FUNCTION_BLOCK declaration
+
+        # Try to match different block types in order of specificity
+
+        # 1. FUNCTION_BLOCK (FB) - must check before FUNCTION
         fb_match = re.search(r'FUNCTION_BLOCK\s+"([^"]+)"', content)
         if fb_match:
             metadata["blockName"] = fb_match.group(1)
             metadata["name"] = fb_match.group(1)
-        
+            metadata["blockType"] = "FB"
+            metadata["description"] = "TIA Portal Function Block converted from SCL"
+
+        # 2. FUNCTION (FC) - with optional return type
+        # Pattern: FUNCTION "name" : ReturnType
+        elif re.search(r'(?<!FUNCTION_BLOCK\s)FUNCTION\s+"([^"]+)"', content):
+            fc_match = re.search(r'FUNCTION\s+"([^"]+)"\s*:\s*(\w+)', content)
+            if fc_match:
+                metadata["blockName"] = fc_match.group(1)
+                metadata["name"] = fc_match.group(1)
+                metadata["blockType"] = "FC"
+                metadata["returnType"] = fc_match.group(2)
+                metadata["description"] = "TIA Portal Function converted from SCL"
+            else:
+                # FC without return type (returns Void)
+                fc_match_no_ret = re.search(r'FUNCTION\s+"([^"]+)"', content)
+                if fc_match_no_ret:
+                    metadata["blockName"] = fc_match_no_ret.group(1)
+                    metadata["name"] = fc_match_no_ret.group(1)
+                    metadata["blockType"] = "FC"
+                    metadata["returnType"] = "Void"
+                    metadata["description"] = "TIA Portal Function converted from SCL"
+
+        # 3. ORGANIZATION_BLOCK (OB)
+        ob_match = re.search(r'ORGANIZATION_BLOCK\s+"([^"]+)"', content)
+        if ob_match:
+            metadata["blockName"] = ob_match.group(1)
+            metadata["name"] = ob_match.group(1)
+            metadata["blockType"] = "OB"
+            metadata["description"] = "TIA Portal Organization Block converted from SCL"
+            # Extract OB number if present (e.g., OB1, OB100)
+            ob_num_match = re.search(r'OB(\d+)', ob_match.group(1))
+            if ob_num_match:
+                metadata["blockNumber"] = ob_num_match.group(1)
+
+        # 4. DATA_BLOCK (DB)
+        db_match = re.search(r'DATA_BLOCK\s+"([^"]+)"', content)
+        if db_match:
+            metadata["blockName"] = db_match.group(1)
+            metadata["name"] = db_match.group(1)
+            metadata["blockType"] = "GlobalDB"
+            metadata["description"] = "TIA Portal Data Block converted from SCL"
+            metadata["programmingLanguage"] = "DB"
+
         # Extract S7_Optimized_Access setting
         opt_match = re.search(r'S7_Optimized_Access\s*:=\s*[\'"]([^\'"]+)[\'"]', content)
         if opt_match:
             metadata["memoryLayout"] = "Optimized" if opt_match.group(1) == "TRUE" else "Standard"
-        
+
         # Extract version if present
         version_match = re.search(r'VERSION\s*:\s*([\d.]+)', content)
         if version_match:
             metadata["version"] = version_match.group(1)
-            
+
         # Extract author if present
         author_match = re.search(r'AUTHOR\s*:\s*([^\n]+)', content)
         if author_match:
             metadata["author"] = author_match.group(1).strip()
-            
+
         return metadata
     
     def parse_variable_section(self, section_content: str, section_type: str) -> List[Dict[str, str]]:
@@ -187,36 +234,64 @@ class SCLToJSONConverter:
         
         return sections
     
-    def extract_code_section(self, content: str) -> List[str]:
-        """Extract code section between BEGIN and END_FUNCTION_BLOCK with enhanced filtering"""
+    def extract_code_section(self, content: str, block_type: str = None) -> List[str]:
+        """Extract code section between BEGIN and END marker for all block types
+
+        Supports:
+        - FB: BEGIN...END_FUNCTION_BLOCK
+        - FC: BEGIN...END_FUNCTION
+        - OB: BEGIN...END_ORGANIZATION_BLOCK
+        - DB: BEGIN...END_DATA_BLOCK (for initial values)
+        """
         code_lines = []
-        
-        # Find BEGIN...END_FUNCTION_BLOCK section
-        begin_match = re.search(r'BEGIN\s*\n(.*?)END_FUNCTION_BLOCK', content, re.DOTALL)
+
+        # Define END markers for each block type
+        end_markers = {
+            "FB": "END_FUNCTION_BLOCK",
+            "FC": "END_FUNCTION",
+            "OB": "END_ORGANIZATION_BLOCK",
+            "GlobalDB": "END_DATA_BLOCK",
+            "InstanceDB": "END_DATA_BLOCK"
+        }
+
+        # If block_type not specified, try all patterns
+        if block_type and block_type in end_markers:
+            patterns_to_try = [end_markers[block_type]]
+        else:
+            # Try all patterns in order of specificity (longest first to avoid partial matches)
+            patterns_to_try = ["END_FUNCTION_BLOCK", "END_ORGANIZATION_BLOCK", "END_DATA_BLOCK", "END_FUNCTION"]
+
+        begin_match = None
+        for end_marker in patterns_to_try:
+            pattern = rf'BEGIN\s*\n(.*?){end_marker}'
+            begin_match = re.search(pattern, content, re.DOTALL)
+            if begin_match:
+                break
+
         if begin_match:
             code_content = begin_match.group(1)
-            
+
             # Split into lines and clean up
             lines = code_content.split('\n')
             for line in lines:
                 # Keep original line (don't strip leading whitespace for indentation)
                 cleaned_line = line.rstrip()
-                
+
                 # Filter out obvious placeholder lines but keep meaningful code
-                if cleaned_line and not (cleaned_line.strip() == "// No code available" or 
+                if cleaned_line and not (cleaned_line.strip() == "// No code available" or
                                         cleaned_line.strip() == "// Add your logic here"):
                     code_lines.append(cleaned_line)
                 elif cleaned_line == "":  # Keep empty lines for structure
                     code_lines.append(cleaned_line)
-            
+
             # Remove trailing empty lines
             while code_lines and not code_lines[-1]:
                 code_lines.pop()
-                
+
             # Remove leading empty lines
             while code_lines and not code_lines[0]:
                 code_lines.pop(0)
-        
+
         return code_lines
     
     def scl_to_json(self, scl_file: str, output_json_file: str = None) -> str:
@@ -239,15 +314,16 @@ class SCLToJSONConverter:
             
             # Parse header information
             metadata = self.parse_scl_header(scl_content)
-            print(f"Parsed metadata: Block name = {metadata.get('blockName', 'N/A')}")
-            
+            block_type = metadata.get("blockType", "FB")
+            print(f"Parsed metadata: Block name = {metadata.get('blockName', 'N/A')}, Block type = {block_type}")
+
             # Extract variable sections
             sections = self.extract_variable_sections(scl_content)
             section_summary = {k: len(v) for k, v in sections.items() if v}
             print(f"Extracted sections: {section_summary}")
-            
-            # Extract code section
-            code_lines = self.extract_code_section(scl_content)
+
+            # Extract code section (pass block_type for correct END marker matching)
+            code_lines = self.extract_code_section(scl_content, block_type)
             print(f"Extracted {len(code_lines)} lines of code")
             
             # Build JSON structure matching xml_to_json.py format
