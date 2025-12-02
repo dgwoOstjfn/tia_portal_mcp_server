@@ -357,21 +357,37 @@ class BlockHandlers:
                     def _import_block():
                         # First, ensure the target folder exists if specified
                         if folder_name:
-                            success = _ensure_folder_exists(plc_software, folder_name, subfolder_name)
-                            if not success:
-                                return False
-                        
-                        success = import_block_from_xml(
+                            folder_success = _ensure_folder_exists(plc_software, folder_name, subfolder_name)
+                            if not folder_success:
+                                return {"success": False, "error": f"Failed to create/access folder '{folder_name}'", "block_name": None}
+
+                        result = import_block_from_xml(
                             plc_software,
                             str(path),
                             folder_name=folder_name,
                             subfolder_name=subfolder_name
                         )
-                        return success
-                    
-                    success = await session.client_wrapper.execute_sync(_import_block)
-                    
-                    if success:
+                        return result
+
+                    import_result = await session.client_wrapper.execute_sync(_import_block)
+
+                    # Handle both dict (new) and bool (legacy) return types
+                    if isinstance(import_result, dict):
+                        if import_result.get("success"):
+                            imported_blocks.append({
+                                "path": xml_path,
+                                "block_name": import_result.get("block_name", path.stem),
+                                "folder": folder_name,
+                                "subfolder": subfolder_name
+                            })
+                            logger.info(f"Imported block from {xml_path}")
+                        else:
+                            errors.append({
+                                "path": xml_path,
+                                "error": import_result.get("error", "Import failed with unknown error")
+                            })
+                            logger.error(f"Failed to import {xml_path}: {import_result.get('error')}")
+                    elif import_result:  # Legacy bool True
                         imported_blocks.append({
                             "path": xml_path,
                             "block_name": path.stem,
@@ -379,7 +395,7 @@ class BlockHandlers:
                             "subfolder": subfolder_name
                         })
                         logger.info(f"Imported block from {xml_path}")
-                    else:
+                    else:  # Legacy bool False
                         errors.append({
                             "path": xml_path,
                             "error": "Import failed"

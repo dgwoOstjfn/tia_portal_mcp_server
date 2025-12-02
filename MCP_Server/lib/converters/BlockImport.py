@@ -16,29 +16,28 @@ from tia_portal import PLCSoftware, PLCBlocks
 def import_block_from_xml(tia_software, xml_path, folder_name=None, subfolder_name=None):
     """
     Import a block from XML file into TIA Portal project
-    
+
     Args:
         tia_software: TIA Portal software instance
         xml_path: Path to the XML file containing the block
         folder_name: Name of the folder to import the block into. If None, imports to root folder.
         subfolder_name: Name of the subfolder inside folder_name to import the block into. If None, imports directly to folder_name.
-        
+
     Returns:
-        bool: True if import successful, False otherwise
+        dict: {"success": bool, "error": str or None, "block_name": str or None}
+              For backward compatibility, also supports bool return check via truthiness
     """
     try:
         # Validate PLC software object
         if not tia_software or not isinstance(tia_software, PLCSoftware):
-            print("Invalid PLC software object")
-            return False
-            
+            return {"success": False, "error": "Invalid PLC software object", "block_name": None}
+
         # Case 1: folder_name is None, subfolder_name is None - use root
         if not folder_name:
             # Use the default blocks collection from root
             blocks = tia_software.get_blocks()
             if not blocks or not isinstance(blocks, PLCBlocks):
-                print("Invalid blocks collection")
-                return False
+                return {"success": False, "error": "Invalid blocks collection", "block_name": None}
         # Case 2 & 3: folder_name has value
         else:
             try:
@@ -48,9 +47,8 @@ def import_block_from_xml(tia_software, xml_path, folder_name=None, subfolder_na
                 user_group = user_groups.find(folder_name)
                 # Check if the folder exists
                 if not user_group or not user_group.value:
-                    print(f"Folder '{folder_name}' not found, skipping import")
-                    return False
-                
+                    return {"success": False, "error": f"Folder '{folder_name}' not found in project", "block_name": None}
+
                 # Case 2: folder_name has value, subfolder_name is None
                 if not subfolder_name:
                     # Use the main folder
@@ -64,35 +62,40 @@ def import_block_from_xml(tia_software, xml_path, folder_name=None, subfolder_na
                         sub_group = parent_groups.find(subfolder_name)
                         # Check if the subfolder exists
                         if not sub_group or not sub_group.value:
-                            print(f"Subfolder '{subfolder_name}' not found in folder '{folder_name}', skipping import")
-                            return False
+                            return {"success": False, "error": f"Subfolder '{subfolder_name}' not found in folder '{folder_name}'", "block_name": None}
                         # Get blocks from the specified subfolder
                         blocks = sub_group.get_blocks()
                     except Exception as e:
-                        print(f"Error accessing subfolder '{subfolder_name}': {str(e)}")
-                        return False
+                        return {"success": False, "error": f"Error accessing subfolder '{subfolder_name}': {str(e)}", "block_name": None}
             except Exception as e:
-                print(f"Error accessing folder '{folder_name}': {str(e)}")
-                return False
-        
+                return {"success": False, "error": f"Error accessing folder '{folder_name}': {str(e)}", "block_name": None}
+
         block_name = os.path.splitext(os.path.basename(xml_path))[0]
-        print(f"正在从文件 {xml_path} 创建功能块...")
-        
-        print(f"Creating block from {xml_path}...")
-        new_block = blocks.create(
-            path=xml_path,
-            name=block_name,
-            labels={"CreatedBy": "Openness API"}
-        )
-        print(f"Successfully created block: {new_block.name}")
-        
-        # Return success after block creation
-        return True
-        
+
+        # Try to import the block - this is where TIA Portal API is called
+        try:
+            new_block = blocks.create(
+                path=xml_path,
+                name=block_name,
+                labels={"CreatedBy": "Openness API"}
+            )
+            return {"success": True, "error": None, "block_name": new_block.name}
+        except Exception as import_error:
+            # Capture the actual TIA Portal error message
+            error_msg = str(import_error)
+            # Common TIA Portal import errors and their explanations
+            if "could not be found" in error_msg.lower() or "not found" in error_msg.lower():
+                error_msg = f"TIA Portal import failed: {error_msg}. Check if all referenced UDTs and DBs exist in the project."
+            elif "already exists" in error_msg.lower():
+                error_msg = f"Block '{block_name}' already exists in the target location. Delete it first or use a different name."
+            elif "syntax" in error_msg.lower() or "invalid" in error_msg.lower():
+                error_msg = f"TIA Portal import failed due to syntax/validation error: {error_msg}"
+            return {"success": False, "error": error_msg, "block_name": block_name}
+
     except Exception as e:
-        print(f"操作过程中发生错误: {str(e)}")
+        error_details = str(e)
         traceback.print_exc()
-        return False
+        return {"success": False, "error": f"Unexpected error during import: {error_details}", "block_name": None}
 
 if __name__ == "__main__":
     try:
@@ -139,21 +142,21 @@ if __name__ == "__main__":
             
         xml_path = tia_config.toImportXMLPath
         print(f"Importing block from: {xml_path}")
-        success = import_block_from_xml(tia_software, xml_path,'bbb','sub_bbb')
-        
-        if success:
-            print("Block imported successfully")
-            
+        result = import_block_from_xml(tia_software, xml_path,'bbb','sub_bbb')
+
+        if result.get("success"):
+            print(f"Block '{result.get('block_name')}' imported successfully")
+
             # Save and compile after successful import
             print("Saving project changes...")
             tia_client.project.save()
             print("Project changes saved successfully")
-            
+
             print("Compiling project...")
             tia_client.project.compile()
             print("Project compiled successfully")
         else:
-            print("Block import failed")
+            print(f"Block import failed: {result.get('error')}")
             
         input("按回车键继续...")
         

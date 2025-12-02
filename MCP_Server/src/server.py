@@ -1128,8 +1128,7 @@ class TIAPortalMCPServer:
                 }
             
             result = UDTHandlers.discover_all_udts(
-                session.client_wrapper,
-                arguments["session_id"]
+                session
             )
             session.update_activity()
             return result
@@ -1143,8 +1142,7 @@ class TIAPortalMCPServer:
                 }
             
             result = UDTHandlers.export_all_udts(
-                session.client_wrapper,
-                arguments["session_id"],
+                session,
                 arguments.get("output_path", "./exports"),
                 arguments.get("export_all", False)
             )
@@ -1160,8 +1158,7 @@ class TIAPortalMCPServer:
                 }
             
             result = UDTHandlers.export_specific_udts(
-                session.client_wrapper,
-                arguments["session_id"],
+                session,
                 arguments["udt_names"],
                 arguments.get("output_path", "./exports")
             )
@@ -1177,8 +1174,7 @@ class TIAPortalMCPServer:
                 }
 
             result = UDTHandlers.generate_udt_source(
-                session.client_wrapper,
-                arguments["session_id"],
+                session,
                 arguments["udt_names"],
                 arguments["output_path"],
                 arguments.get("with_dependencies", True)
@@ -1268,11 +1264,19 @@ class TIAPortalMCPServer:
                         "import_result": import_result
                     }
                 else:
+                    # Extract the actual error message from the errors list
+                    errors_list = import_result.get("errors", [])
+                    if errors_list and len(errors_list) > 0:
+                        first_error = errors_list[0].get("error", "Unknown error")
+                        error_msg = f"Block import failed: {first_error}"
+                    else:
+                        error_msg = f"Block import failed: {import_result.get('error', 'Unknown error')}"
+
                     return {
                         "success": False,
-                        "error": f"Block import failed: {import_result.get('error', 'Unknown error')}",
+                        "error": error_msg,
                         "conversion_succeeded": True,
-                        "import_errors": import_result.get("errors", [])
+                        "import_errors": errors_list
                     }
 
             finally:
