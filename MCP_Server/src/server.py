@@ -666,34 +666,6 @@ class TIAPortalMCPServer:
                     }
                 ),
                 types.Tool(
-                    name="generate_udt_source",
-                    description="Generate SCL source code from UDTs",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {
-                                "type": "string",
-                                "description": "Session ID"
-                            },
-                            "udt_names": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "List of UDT names to generate source for"
-                            },
-                            "output_path": {
-                                "type": "string",
-                                "description": "Output SCL file path"
-                            },
-                            "with_dependencies": {
-                                "type": "boolean",
-                                "description": "Whether to include dependencies",
-                                "default": True
-                            }
-                        },
-                        "required": ["session_id", "udt_names", "output_path"]
-                    }
-                ),
-                types.Tool(
                     name="delete_udt",
                     description="Delete a UDT (User Defined Type) from the project",
                     inputSchema={
@@ -1246,23 +1218,6 @@ class TIAPortalMCPServer:
                 session,
                 arguments["udt_names"],
                 arguments.get("output_path", "./exports")
-            )
-            session.update_activity()
-            return result
-        
-        elif tool_name == "generate_udt_source":
-            session = await self.session_manager.get_session(arguments["session_id"])
-            if not session:
-                return {
-                    "success": False,
-                    "error": "Session not found"
-                }
-
-            result = UDTHandlers.generate_udt_source(
-                session,
-                arguments["udt_names"],
-                arguments["output_path"],
-                arguments.get("with_dependencies", True)
             )
             session.update_activity()
             return result
