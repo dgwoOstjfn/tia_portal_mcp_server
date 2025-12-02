@@ -625,3 +625,95 @@ class UDTHandlers:
                 "error": f"Source generation failed: {str(e)}",
                 "details": {}
             }
+
+    @staticmethod
+    async def delete_udt(session, udt_name: str) -> Dict[str, Any]:
+        """Delete a UDT from the TIA Portal project
+
+        Args:
+            session: TIA session object
+            udt_name: Name of the UDT to delete
+
+        Returns:
+            Dict with success status and deletion result
+        """
+        try:
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
+                return {
+                    "success": False,
+                    "error": "Invalid session or no project open"
+                }
+
+            def _delete_udt():
+                # Get PLC software with TypeGroup
+                plc_software = None
+                for device in session.client_wrapper.project.devices:
+                    items = device.get_items()
+                    if items:
+                        for item in items:
+                            software = item.get_software()
+                            if software and hasattr(software.value, 'TypeGroup'):
+                                plc_software = software
+                                break
+                    if plc_software:
+                        break
+
+                if not plc_software:
+                    return {"success": False, "error": "No PLC software found in project"}
+
+                # Discover all UDTs to find the target
+                type_group = plc_software.value.TypeGroup
+                all_udts = UDTHandlers._discover_udts_recursive(type_group)
+
+                # Find the UDT by name
+                target_udt = None
+                udt_path = ""
+                for udt_info in all_udts:
+                    if udt_info.get("name") == udt_name:
+                        target_udt = udt_info
+                        udt_path = udt_info.get("path", "")
+                        break
+
+                if not target_udt:
+                    return {"success": False, "error": f"UDT '{udt_name}' not found"}
+
+                # Check if UDT is protected
+                if target_udt.get("is_know_how_protected", False):
+                    return {"success": False, "error": f"UDT '{udt_name}' is Know-How protected and cannot be deleted"}
+
+                # Get the UDT object
+                udt_object = target_udt.get("udt_object")
+                if not udt_object:
+                    return {"success": False, "error": f"UDT '{udt_name}' object reference not available"}
+
+                # Delete the UDT
+                try:
+                    udt_object.Delete()
+
+                    return {
+                        "success": True,
+                        "deleted_udt": {
+                            "name": udt_name,
+                            "path": udt_path
+                        }
+                    }
+                except Exception as delete_error:
+                    error_msg = str(delete_error)
+                    if "reference" in error_msg.lower() or "used" in error_msg.lower():
+                        return {"success": False, "error": f"UDT '{udt_name}' is referenced by other blocks/UDTs and cannot be deleted"}
+                    return {"success": False, "error": f"Failed to delete UDT: {error_msg}"}
+
+            result = await session.client_wrapper.execute_sync(_delete_udt)
+
+            if result.get("success"):
+                session.project_modified = True
+                logger.info(f"Deleted UDT: {udt_name}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Delete UDT failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

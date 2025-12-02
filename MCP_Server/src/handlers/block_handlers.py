@@ -642,3 +642,141 @@ class BlockHandlers:
                 "success": False,
                 "error": str(e)
             }
+
+    @staticmethod
+    async def delete_block(
+        session,
+        block_name: str,
+        folder_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Delete a block from the TIA Portal project
+
+        Args:
+            session: TIA session object
+            block_name: Name of the block to delete
+            folder_path: Optional folder path (e.g., "MyFolder" or "MyFolder/SubFolder")
+
+        Returns:
+            Dict with success status and deletion result
+        """
+        try:
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
+                return {
+                    "success": False,
+                    "error": "Invalid session or no project open"
+                }
+
+            def _delete_block():
+                # Get PLC software
+                plc_software = None
+                for device in session.client_wrapper.project.devices:
+                    items = device.get_items()
+                    if items:
+                        for item in items:
+                            software = item.get_software()
+                            if software and software.value is not None:
+                                plc_software = software
+                                break
+                    if plc_software:
+                        break
+
+                if not plc_software:
+                    return {"success": False, "error": "No PLC software found in project"}
+
+                # Find the block
+                block_found = None
+                block_location = "root"
+
+                if folder_path:
+                    # Search in specified folder
+                    try:
+                        user_groups = plc_software.get_user_block_groups()
+                        path_parts = folder_path.strip('/').split('/')
+
+                        current_group = user_groups.find(path_parts[0])
+                        if not current_group or not current_group.value:
+                            return {"success": False, "error": f"Folder '{path_parts[0]}' not found"}
+
+                        # Navigate to nested folders if specified
+                        for i in range(1, len(path_parts)):
+                            nested_groups = current_group.get_groups()
+                            current_group = nested_groups.find(path_parts[i])
+                            if not current_group or not current_group.value:
+                                return {"success": False, "error": f"Subfolder '{path_parts[i]}' not found"}
+
+                        # Get blocks in the target folder
+                        blocks = current_group.get_blocks()
+                        block_found = blocks.find(block_name)
+                        block_location = folder_path
+
+                    except Exception as e:
+                        return {"success": False, "error": f"Error accessing folder: {str(e)}"}
+                else:
+                    # Search in root folder first
+                    blocks = plc_software.get_blocks()
+                    block_found = blocks.find(block_name)
+
+                    # If not found in root, search in all user groups
+                    if not block_found or not block_found.value:
+                        user_groups = plc_software.get_user_block_groups()
+                        if user_groups and user_groups.value:
+                            all_blocks = _get_all_blocks_comprehensive(plc_software)
+                            for block_info in all_blocks:
+                                if block_info.get("name") == block_name:
+                                    block_found = block_info.get("block_object")
+                                    block_location = block_info.get("folder", "root")
+                                    break
+
+                if not block_found or (hasattr(block_found, 'value') and block_found.value is None):
+                    return {"success": False, "error": f"Block '{block_name}' not found"}
+
+                # Check if block is protected
+                block_obj = block_found.value if hasattr(block_found, 'value') else block_found
+                if hasattr(block_obj, 'IsKnowHowProtected') and block_obj.IsKnowHowProtected:
+                    return {"success": False, "error": f"Block '{block_name}' is Know-How protected and cannot be deleted"}
+
+                # Get block type before deletion
+                block_type = "Unknown"
+                try:
+                    if hasattr(block_found, 'get_type'):
+                        block_type = block_found.get_type()
+                    elif hasattr(block_obj, 'GetType'):
+                        block_type = str(block_obj.GetType().Name).split('.')[-1]
+                except:
+                    pass
+
+                # Delete the block
+                try:
+                    if hasattr(block_found, 'delete'):
+                        block_found.delete()
+                    else:
+                        block_obj.Delete()
+
+                    return {
+                        "success": True,
+                        "deleted_block": {
+                            "name": block_name,
+                            "type": block_type,
+                            "location": block_location
+                        }
+                    }
+                except Exception as delete_error:
+                    error_msg = str(delete_error)
+                    if "reference" in error_msg.lower() or "used" in error_msg.lower():
+                        return {"success": False, "error": f"Block '{block_name}' is referenced by other blocks and cannot be deleted"}
+                    return {"success": False, "error": f"Failed to delete block: {error_msg}"}
+
+            result = await session.client_wrapper.execute_sync(_delete_block)
+
+            if result.get("success"):
+                session.project_modified = True
+                logger.info(f"Deleted block: {block_name}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Delete block failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

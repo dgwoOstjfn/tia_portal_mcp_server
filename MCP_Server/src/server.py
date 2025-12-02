@@ -324,6 +324,28 @@ class TIAPortalMCPServer:
                     }
                 ),
                 types.Tool(
+                    name="delete_block",
+                    description="Delete a block (FB, FC, OB, DB) from the project",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "block_name": {
+                                "type": "string",
+                                "description": "Name of the block to delete"
+                            },
+                            "folder_path": {
+                                "type": "string",
+                                "description": "Optional folder path (e.g., 'MyFolder' or 'MyFolder/SubFolder')"
+                            }
+                        },
+                        "required": ["session_id", "block_name"]
+                    }
+                ),
+                types.Tool(
                     name="compile_project",
                     description="Compile the entire project",
                     inputSchema={
@@ -671,6 +693,24 @@ class TIAPortalMCPServer:
                         "required": ["session_id", "udt_names", "output_path"]
                     }
                 ),
+                types.Tool(
+                    name="delete_udt",
+                    description="Delete a UDT (User Defined Type) from the project",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "udt_name": {
+                                "type": "string",
+                                "description": "Name of the UDT to delete"
+                            }
+                        },
+                        "required": ["session_id", "udt_name"]
+                    }
+                ),
                 # Block creation from SCL string
                 types.Tool(
                     name="create_block_from_scl",
@@ -960,11 +1000,27 @@ class TIAPortalMCPServer:
                     "success": False,
                     "error": "Session not found"
                 }
-            
+
             result = await BlockHandlers.list_blocks(session)
             session.update_activity()
             return result
-        
+
+        elif tool_name == "delete_block":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {
+                    "success": False,
+                    "error": "Session not found"
+                }
+
+            result = await BlockHandlers.delete_block(
+                session,
+                arguments["block_name"],
+                arguments.get("folder_path")
+            )
+            session.update_activity()
+            return result
+
         # Compilation operation tools
         elif tool_name == "compile_project":
             session = await self.session_manager.get_session(arguments["session_id"])
@@ -1178,6 +1234,21 @@ class TIAPortalMCPServer:
                 arguments["udt_names"],
                 arguments["output_path"],
                 arguments.get("with_dependencies", True)
+            )
+            session.update_activity()
+            return result
+
+        elif tool_name == "delete_udt":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {
+                    "success": False,
+                    "error": "Session not found"
+                }
+
+            result = await UDTHandlers.delete_udt(
+                session,
+                arguments["udt_name"]
             )
             session.update_activity()
             return result

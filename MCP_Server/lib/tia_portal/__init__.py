@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 from typing import Any, Iterator, Optional, Union
+import logging
 
 import clr  # pylint: disable=import-error
 
@@ -14,6 +15,8 @@ import tia_portal.exceptions as tia_e
 from tia_portal.protocol.composition import Composition, CompositionItem
 from tia_portal.protocol.objects import TiaObject
 from tia_portal.version import TiaVersion
+
+logger = logging.getLogger(__name__)
 
 cfg.load()
 
@@ -1098,6 +1101,18 @@ class PLCBlock(CompositionItem):
 
         self.value.SetAttribute("AssignedProDiagFB", prodiag)
 
+    def delete(self) -> None:
+        """Deletes the block from the project.
+
+        Raises:
+            tia_e.InvalidBlock: If the value is None or block cannot be deleted.
+        """
+        if self.value is None:
+            raise tia_e.InvalidBlock("Value is None")
+
+        self.value.Delete()
+        self.value = None
+
 
 class PLCBlocks(Composition[PLCBlock]):
     """Represents a blocks. This is a composition of blocks.
@@ -1228,7 +1243,7 @@ class PLCBlocks(Composition[PLCBlock]):
 
         if match:
             for group in match.groups():
-                print(f"Warning: {group} is not replaced in {new_file}!")
+                logger.warning(f"Warning: {group} is not replaced in {new_file}!")
 
         with open(new_file, "w", encoding="utf-8") as file:
             file.write(data)
@@ -2157,7 +2172,7 @@ class Project(TiaObject):
             raise tia_e.TIAInvalidSession("Session is None")
 
         if self.value is not None:
-            print(
+            logger.info(
                 f"There is already a Project open, closing {self.value.Name} before opening {self.name}"
             )
             self.close()
