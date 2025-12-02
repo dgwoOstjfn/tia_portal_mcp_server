@@ -21,7 +21,12 @@ MCP (Model Context Protocol) server for Siemens TIA Portal automation. Provides 
 - **Discover All UDTs**: Recursively discover all User-Defined Types in nested groups
 - **Export All UDTs**: Export all UDTs to XML files maintaining folder structure
 - **Export Specific UDTs**: Export selected UDTs by name
-- **Generate UDT Source**: Generate SCL source code from UDTs with dependency management
+- **Import UDTs**: Import UDTs from XML files into target folders/subfolders
+- **Delete UDT**: Delete a UDT from the project
+
+### Block Management (ENHANCED)
+- **Delete Block**: Delete FB, FC, OB, or DB blocks from the project
+- **Create Block from SCL**: Create blocks directly from SCL source code string
 
 ### File Conversion
 - **XML ↔ JSON**: Bidirectional conversion between XML and JSON formats
@@ -137,14 +142,46 @@ python tests/test_tools_simple.py
     }
 }
 
-# Generate SCL source from UDTs
+# Import UDTs into a folder
 {
-    "tool": "generate_udt_source",
+    "tool": "import_udt",
     "arguments": {
         "session_id": "your-session-id",
-        "udt_names": ["MyUDT1", "MyUDT2"],
-        "output_path": "./generated/udts.scl",
-        "with_dependencies": true
+        "xml_paths": ["./udts/MyUDT1.xml", "./udts/MyUDT2.xml"],
+        "target_folder": "MyTypes/SubFolder",
+        "import_options": "Override"
+    }
+}
+
+# Delete a UDT
+{
+    "tool": "delete_udt",
+    "arguments": {
+        "session_id": "your-session-id",
+        "udt_name": "MyUDT1"
+    }
+}
+```
+
+#### Block Operations
+```python
+# Delete a block
+{
+    "tool": "delete_block",
+    "arguments": {
+        "session_id": "your-session-id",
+        "block_name": "MyFB",
+        "folder_path": "MyFolder/SubFolder"  # Optional
+    }
+}
+
+# Create block from SCL code
+{
+    "tool": "create_block_from_scl",
+    "arguments": {
+        "session_id": "your-session-id",
+        "scl_content": "FUNCTION_BLOCK \"MyFB\"\nVAR\n  Counter : Int;\nEND_VAR\nBEGIN\n  Counter := Counter + 1;\nEND_FUNCTION_BLOCK",
+        "target_folder": "MyBlocks"
     }
 }
 ```
@@ -205,6 +242,8 @@ python tests/test_tools_simple.py
 - `import_blocks` - Import blocks from XML files
 - `export_blocks` - Export blocks to XML files
 - `list_blocks` - List all blocks in the current project
+- `delete_block` - Delete a block (FB, FC, OB, DB) from the project
+- `create_block_from_scl` - Create a block from SCL source code string
 
 ### Compilation
 - `compile_project` - Compile the entire project
@@ -222,7 +261,8 @@ python tests/test_tools_simple.py
 - `discover_all_udts` - Discover all UDTs using recursive nested group exploration
 - `export_all_udts` - Export all UDTs to XML files maintaining folder structure
 - `export_specific_udts` - Export specific UDTs by name
-- `generate_udt_source` - Generate SCL source code from UDTs
+- `import_udt` - Import UDTs from XML files into target folders/subfolders
+- `delete_udt` - Delete a UDT from the project
 
 ### File Conversion
 - `convert_xml_to_json` - Convert XML file to JSON format
@@ -369,6 +409,16 @@ All new tag and UDT tools maintain the same message format as existing MCP tools
 - **Flexible Paths**: Support for relative and absolute paths
 
 ## Recent Updates
+
+### Version 1.4.0 - Block & UDT Management
+- ✅ Added `delete_block` tool for deleting FB, FC, OB, DB blocks
+- ✅ Added `delete_udt` tool for deleting User-Defined Types
+- ✅ Added `import_udt` tool for importing UDTs from XML into target folders/subfolders
+- ✅ Added `create_block_from_scl` tool for creating blocks from SCL source code
+- ✅ Enhanced SCL converter to support all block types (FB, FC, OB, DB)
+- ✅ Fixed ELSIF keyword recognition in SCL parsing
+- ✅ Fixed DB variable start value parsing
+- ✅ Removed non-functional `generate_udt_source` tool
 
 ### Version 1.3.0 - Specialized Conversions
 - ✅ PLC tag XML to Excel conversion with Variables, User Constants, System Constants sheets
