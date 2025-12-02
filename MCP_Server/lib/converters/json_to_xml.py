@@ -25,7 +25,7 @@ class TIAXMLGenerator:
             'DO', 'TO', 'BY', ';', '(', ')', '[', ']', ',', '.', ':'
         ]
         self.scl_keywords = [
-            'IF', 'THEN', 'ELSE', 'ELSEIF', 'END_IF', 'CASE', 'OF', 'END_CASE',
+            'IF', 'THEN', 'ELSE', 'ELSIF', 'ELSEIF', 'END_IF', 'CASE', 'OF', 'END_CASE',
             'FOR', 'TO', 'BY', 'DO', 'END_FOR', 'WHILE', 'END_WHILE',
             'REPEAT', 'UNTIL', 'END_REPEAT', 'EXIT', 'CONTINUE', 'RETURN',
             'TRUE', 'FALSE', 'AND', 'OR', 'XOR', 'NOT', 'REGION', 'END_REGION',
@@ -554,10 +554,19 @@ def generate_sections_xml(sections: dict, metadata: dict, xml_gen: 'TIAXMLGenera
             for variable in variables:
                 var_name = variable.get("name", "")
                 var_datatype = variable.get("datatype", "")
+                var_start_value = variable.get("startValue")
                 # Escape XML characters in attributes
                 var_name = xml_gen.escape_xml(var_name)
                 var_datatype = xml_gen.escape_xml(var_datatype)
-                sections_xml += f'    <Member Name="{var_name}" Datatype="{var_datatype}" />\n'
+
+                # Build Member element with optional StartValue
+                if var_start_value is not None:
+                    var_start_value = xml_gen.escape_xml(var_start_value)
+                    sections_xml += f'    <Member Name="{var_name}" Datatype="{var_datatype}">\n'
+                    sections_xml += f'      <StartValue>{var_start_value}</StartValue>\n'
+                    sections_xml += f'    </Member>\n'
+                else:
+                    sections_xml += f'    <Member Name="{var_name}" Datatype="{var_datatype}" />\n'
             sections_xml += '  </Section>\n'
         else:
             # Empty sections still need to be present

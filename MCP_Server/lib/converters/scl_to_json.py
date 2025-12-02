@@ -148,23 +148,37 @@ class SCLToJSONConverter:
                 i += 1
                 continue
                 
-            # Parse variable declarations: name : datatype;
-            # Enhanced pattern to handle attributes and complex datatypes
+            # Parse variable declarations: name : datatype [:= startvalue];
+            # Enhanced pattern to handle attributes, complex datatypes, and initial values
             var_match = re.match(r'\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\{[^}]*\})?\s*:\s*([^;]+);.*', line)
             if var_match:
                 var_name = var_match.group(1)
-                var_datatype = var_match.group(2).strip()
-                
+                var_datatype_full = var_match.group(2).strip()
+
                 # Clean up datatype - remove attributes and extra spaces
-                var_datatype = re.sub(r'\s*\{[^}]*\}\s*', '', var_datatype).strip()
-                
-                # Handle quoted datatypes (keep quotes for UDTs)
-                # No modification needed for quoted types
-                
-                variables.append({
+                var_datatype_full = re.sub(r'\s*\{[^}]*\}\s*', '', var_datatype_full).strip()
+
+                # Separate datatype from initial value (handle := assignment)
+                start_value = None
+                if ':=' in var_datatype_full:
+                    # Split by := to get datatype and start value
+                    parts = var_datatype_full.split(':=', 1)
+                    var_datatype = parts[0].strip()
+                    start_value = parts[1].strip()
+                else:
+                    var_datatype = var_datatype_full
+
+                # Build variable entry
+                var_entry = {
                     "name": var_name,
                     "datatype": var_datatype
-                })
+                }
+
+                # Add start value if present
+                if start_value is not None:
+                    var_entry["startValue"] = start_value
+
+                variables.append(var_entry)
             
             i += 1
         
