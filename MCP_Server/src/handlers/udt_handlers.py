@@ -13,7 +13,48 @@ logger = logging.getLogger(__name__)
 
 class UDTHandlers:
     """Handlers for UDT operations"""
-    
+
+    @staticmethod
+    def _get_or_create_type_group(root_type_group, folder_path: str):
+        """
+        Navigate to or create a nested type group path
+
+        Args:
+            root_type_group: The root PlcTypeGroup
+            folder_path: Path like "MyFolder/SubFolder" or empty string for root
+
+        Returns:
+            The target PlcTypeGroup (or PlcTypeUserGroup for nested groups)
+        """
+        if not folder_path:
+            return root_type_group
+
+        current_group = root_type_group
+        path_parts = folder_path.replace('\\', '/').split('/')
+
+        for part in path_parts:
+            if not part:
+                continue
+
+            # Try to find existing group
+            found_group = None
+            if hasattr(current_group, 'Groups'):
+                for group in current_group.Groups:
+                    if getattr(group, 'Name', '') == part:
+                        found_group = group
+                        break
+
+            if found_group:
+                current_group = found_group
+            else:
+                # Create new group
+                if hasattr(current_group, 'Groups'):
+                    current_group = current_group.Groups.Create(part)
+                else:
+                    raise ValueError(f"Cannot create group '{part}' - Groups not available")
+
+        return current_group
+
     @staticmethod
     def _sanitize_path_name(path_name: str) -> str:
         """Sanitize path name for file system compatibility"""
@@ -713,6 +754,159 @@ class UDTHandlers:
 
         except Exception as e:
             logger.error(f"Delete UDT failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    @staticmethod
+    async def import_udt(
+        session,
+        xml_paths: List[str],
+        target_folder: Optional[str] = None,
+        import_options: str = "Override"
+    ) -> Dict[str, Any]:
+        """Import UDTs from XML files into the TIA Portal project
+
+        Args:
+            session: TIA session object
+            xml_paths: List of XML file paths to import
+            target_folder: Optional folder path (e.g., 'MyFolder' or 'MyFolder/SubFolder')
+            import_options: Import option - 'Override' (default) or 'None'
+
+        Returns:
+            Dict with success status and import results
+        """
+        try:
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
+                return {
+                    "success": False,
+                    "error": "Invalid session or no project open"
+                }
+
+            # Validate input files
+            valid_paths = []
+            invalid_paths = []
+            for path in xml_paths:
+                if os.path.isfile(path) and path.lower().endswith('.xml'):
+                    valid_paths.append(path)
+                else:
+                    invalid_paths.append({"path": path, "reason": "File not found or not XML"})
+
+            if not valid_paths:
+                return {
+                    "success": False,
+                    "error": "No valid XML files provided",
+                    "invalid_paths": invalid_paths
+                }
+
+            def _import_udts():
+                # Import required C# objects
+                from System.IO import FileInfo
+                import Siemens.Engineering as tia
+
+                # Get import options
+                if import_options.lower() == "override":
+                    tia_import_options = tia.ImportOptions.Override
+                else:
+                    tia_import_options = tia.ImportOptions(0)  # None
+
+                # Get PLC software with TypeGroup
+                plc_software = None
+                for device in session.client_wrapper.project.devices:
+                    items = device.get_items()
+                    if items:
+                        for item in items:
+                            software = item.get_software()
+                            if software and hasattr(software.value, 'TypeGroup'):
+                                plc_software = software
+                                break
+                    if plc_software:
+                        break
+
+                if not plc_software:
+                    return {"success": False, "error": "No PLC software found in project"}
+
+                # Get root type group
+                root_type_group = plc_software.value.TypeGroup
+
+                # Navigate to or create target folder
+                try:
+                    target_group = UDTHandlers._get_or_create_type_group(
+                        root_type_group,
+                        target_folder or ""
+                    )
+                except Exception as e:
+                    return {"success": False, "error": f"Failed to navigate/create folder: {str(e)}"}
+
+                # Import each file
+                import_results = []
+                success_count = 0
+                failed_count = 0
+
+                for xml_path in valid_paths:
+                    udt_name = os.path.splitext(os.path.basename(xml_path))[0]
+                    try:
+                        file_info = FileInfo(xml_path)
+
+                        # Import using TIA Openness API
+                        target_group.Types.Import(file_info, tia_import_options)
+
+                        import_results.append({
+                            "name": udt_name,
+                            "path": xml_path,
+                            "target_folder": target_folder or "Root",
+                            "status": "success"
+                        })
+                        success_count += 1
+                        logger.info(f"Imported UDT: {udt_name}")
+
+                    except Exception as e:
+                        error_msg = str(e)
+                        import_results.append({
+                            "name": udt_name,
+                            "path": xml_path,
+                            "target_folder": target_folder or "Root",
+                            "status": "failed",
+                            "error": error_msg
+                        })
+                        failed_count += 1
+                        logger.error(f"Failed to import UDT {udt_name}: {error_msg}")
+
+                return {
+                    "success": success_count > 0,
+                    "import_results": import_results,
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "invalid_paths": invalid_paths
+                }
+
+            result = await session.client_wrapper.execute_sync(_import_udts)
+
+            if result.get("success"):
+                session.project_modified = True
+
+            # Build response message
+            success_count = result.get("success_count", 0)
+            failed_count = result.get("failed_count", 0)
+            total = success_count + failed_count
+
+            return {
+                "success": result.get("success", False),
+                "message": f"UDT import completed: {success_count}/{total} imported successfully",
+                "details": {
+                    "total_files": len(xml_paths),
+                    "imported": success_count,
+                    "failed": failed_count,
+                    "invalid_paths": result.get("invalid_paths", []),
+                    "target_folder": target_folder or "Root",
+                    "import_results": result.get("import_results", [])
+                },
+                "error": result.get("error")
+            }
+
+        except Exception as e:
+            logger.error(f"Import UDT failed: {e}")
             return {
                 "success": False,
                 "error": str(e)

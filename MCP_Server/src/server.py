@@ -711,6 +711,35 @@ class TIAPortalMCPServer:
                         "required": ["session_id", "udt_name"]
                     }
                 ),
+                types.Tool(
+                    name="import_udt",
+                    description="Import UDTs from XML files into the project. Supports importing into target folders/subfolders.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "xml_paths": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of XML file paths to import"
+                            },
+                            "target_folder": {
+                                "type": "string",
+                                "description": "Target folder path (e.g., 'MyFolder' or 'MyFolder/SubFolder'). Creates folders if they don't exist."
+                            },
+                            "import_options": {
+                                "type": "string",
+                                "enum": ["Override", "None"],
+                                "description": "Import option: 'Override' to replace existing UDTs, 'None' to skip existing",
+                                "default": "Override"
+                            }
+                        },
+                        "required": ["session_id", "xml_paths"]
+                    }
+                ),
                 # Block creation from SCL string
                 types.Tool(
                     name="create_block_from_scl",
@@ -1249,6 +1278,23 @@ class TIAPortalMCPServer:
             result = await UDTHandlers.delete_udt(
                 session,
                 arguments["udt_name"]
+            )
+            session.update_activity()
+            return result
+
+        elif tool_name == "import_udt":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {
+                    "success": False,
+                    "error": "Session not found"
+                }
+
+            result = await UDTHandlers.import_udt(
+                session,
+                arguments["xml_paths"],
+                arguments.get("target_folder"),
+                arguments.get("import_options", "Override")
             )
             session.update_activity()
             return result
