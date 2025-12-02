@@ -96,30 +96,29 @@ class UDTHandlers:
         return discovered_udts
     
     @staticmethod
-    def discover_all_udts(tia_client_wrapper, session_id: str) -> Dict[str, Any]:
+    def discover_all_udts(session) -> Dict[str, Any]:
         """
         Discover all UDTs in the project using recursive nested group exploration
         
         Args:
-            tia_client_wrapper: TIA client wrapper instance
-            session_id: Session ID
+            session: TIA session object
             
         Returns:
             Dict with success status and UDT discovery results
         """
         try:
             # Get the session
-            session = tia_client_wrapper.session_manager.get_session(session_id)
-            if not session or not session.project:
+            # session = tia_client_wrapper.session_manager.get_session(session_id)
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
                 return {
                     "success": False,
-                    "error": f"Invalid session or no project open: {session_id}",
+                    "error": "Invalid session or no project open",
                     "details": {}
                 }
-            
+
             # Find PLC software
             plc_software = None
-            for device in session.project.devices:
+            for device in session.client_wrapper.project.devices:
                 items = device.get_items()
                 if items:
                     for item in items:
@@ -190,13 +189,12 @@ class UDTHandlers:
             }
     
     @staticmethod
-    def export_all_udts(tia_client_wrapper, session_id: str, output_path: str = "./exports", export_all: bool = False) -> Dict[str, Any]:
+    def export_all_udts(session, output_path: str = "./exports", export_all: bool = False) -> Dict[str, Any]:
         """
         Export all UDTs using the PROVEN direct C# API method
         
         Args:
-            tia_client_wrapper: TIA client wrapper instance
-            session_id: Session ID
+            session: TIA session object
             output_path: Base output directory
             export_all: Whether to export all UDTs or only exportable ones
             
@@ -205,17 +203,17 @@ class UDTHandlers:
         """
         try:
             # Get the session
-            session = tia_client_wrapper.session_manager.get_session(session_id)
-            if not session or not session.project:
+            # session = tia_client_wrapper.session_manager.get_session(session_id)
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
                 return {
                     "success": False,
-                    "error": f"Invalid session or no project open: {session_id}",
+                    "error": "Invalid session or no project open",
                     "details": {}
                 }
-            
+
             # Find PLC software
             plc_software = None
-            for device in session.project.devices:
+            for device in session.client_wrapper.project.devices:
                 items = device.get_items()
                 if items:
                     for item in items:
@@ -374,13 +372,12 @@ class UDTHandlers:
             }
     
     @staticmethod
-    def export_specific_udts(tia_client_wrapper, session_id: str, udt_names: List[str], output_path: str = "./exports") -> Dict[str, Any]:
+    def export_specific_udts(session, udt_names: List[str], output_path: str = "./exports") -> Dict[str, Any]:
         """
         Export specific UDTs by name
         
         Args:
-            tia_client_wrapper: TIA client wrapper instance
-            session_id: Session ID
+            session: TIA session object
             udt_names: List of UDT names to export
             output_path: Output directory
             
@@ -389,17 +386,17 @@ class UDTHandlers:
         """
         try:
             # Get the session
-            session = tia_client_wrapper.session_manager.get_session(session_id)
-            if not session or not session.project:
+            # session = tia_client_wrapper.session_manager.get_session(session_id)
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
                 return {
                     "success": False,
-                    "error": f"Invalid session or no project open: {session_id}",
+                    "error": "Invalid session or no project open",
                     "details": {}
                 }
-            
+
             # Find PLC software
             plc_software = None
-            for device in session.project.devices:
+            for device in session.client_wrapper.project.devices:
                 items = device.get_items()
                 if items:
                     for item in items:
@@ -534,13 +531,12 @@ class UDTHandlers:
             }
     
     @staticmethod
-    def generate_udt_source(tia_client_wrapper, session_id: str, udt_names: List[str], output_path: str, with_dependencies: bool = True) -> Dict[str, Any]:
+    def generate_udt_source(session, udt_names: List[str], output_path: str, with_dependencies: bool = True) -> Dict[str, Any]:
         """
         Generate SCL source code from UDTs
         
         Args:
-            tia_client_wrapper: TIA client wrapper instance
-            session_id: Session ID
+            session: TIA session object
             udt_names: List of UDT names to generate source for
             output_path: Output SCL file path
             with_dependencies: Whether to include dependencies
@@ -550,17 +546,17 @@ class UDTHandlers:
         """
         try:
             # Get the session
-            session = tia_client_wrapper.session_manager.get_session(session_id)
-            if not session or not session.project:
+            # session = tia_client_wrapper.session_manager.get_session(session_id)
+            if not session or not session.client_wrapper or not session.client_wrapper.project:
                 return {
                     "success": False,
-                    "error": f"Invalid session or no project open: {session_id}",
+                    "error": "Invalid session or no project open",
                     "details": {}
                 }
-            
+
             # Find PLC software
             plc_software = None
-            for device in session.project.devices:
+            for device in session.client_wrapper.project.devices:
                 items = device.get_items()
                 if items:
                     for item in items:
