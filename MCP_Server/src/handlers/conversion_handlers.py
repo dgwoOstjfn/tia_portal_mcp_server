@@ -291,6 +291,30 @@ class ConversionHandlers:
                     "error": f"SCL file not found: {scl_file_path}"
                 }
             
+            # Check if file is UDT (starts with TYPE)
+            try:
+                with open(scl_file_path, 'r', encoding='utf-8') as f:
+                    # Read enough chars to detect TYPE "Name"
+                    content_start = f.read(200).strip().upper()
+                    
+                if content_start.startswith('TYPE') or 'TYPE "' in content_start:
+                    logger.info(f"Detected UDT format in {scl_file_path}, using UDTConverter")
+                    try:
+                        result_path = self.udt_converter.udt_to_xml(scl_file_path, output_path)
+                        return {
+                            "success": True,
+                            "output_file": result_path,
+                            "message": f"Successfully converted UDT SCL to XML: {result_path}"
+                        }
+                    except Exception as e:
+                        return {
+                            "success": False,
+                            "error": f"UDT conversion error: {str(e)}"
+                        }
+            except Exception as e:
+                logger.warning(f"Error detecting UDT type: {e}")
+                # Continue with standard conversion if detection fails
+            
             logger.info(f"Converting SCL to XML (via JSON): {scl_file_path}")
             
             # Step 1: SCL to JSON

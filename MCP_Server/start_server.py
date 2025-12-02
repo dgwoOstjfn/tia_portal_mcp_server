@@ -36,13 +36,13 @@ if __name__ == "__main__":
         from src.server import main
         main()
     except ImportError as e:
-        print(f"Error importing server: {e}")
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"Script location: {Path(__file__).parent}")
-        print(f"Python path: {sys.path[:3]}...")
+        sys.stderr.write(f"Error importing server: {e}\n")
+        sys.stderr.write(f"Current working directory: {os.getcwd()}\n")
+        sys.stderr.write(f"Script location: {Path(__file__).parent}\n")
+        sys.stderr.write(f"Python path: {sys.path[:3]}...\n")
         sys.exit(1)
     except Exception as e:
-        print(f"Error starting server: {e}")
+        sys.stderr.write(f"Error starting server: {e}\n")
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)

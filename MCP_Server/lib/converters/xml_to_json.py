@@ -2,6 +2,9 @@ import xml.etree.ElementTree as ET
 import re
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 def process_member_recursively(member, level=0):
     """Recursively process member elements, handling nested structs"""
@@ -39,7 +42,7 @@ def xml_to_json(xml_file, output_file=None):
         tree = ET.parse(xml_file)
         root = tree.getroot()
     except ET.ParseError as e:
-        print(f"XML parsing error: {e}")
+        logger.error(f"XML parsing error: {e}")
         return None
     
     # Extract document info and engineering version
@@ -58,12 +61,12 @@ def xml_to_json(xml_file, output_file=None):
         block = root.find(".//SW.Blocks.GlobalDB")
         block_type = "GlobalDB"
     if block is None:
-        print("No supported block type (FB/OB/FC/GlobalDB) found in the XML file")
+        logger.error("No supported block type (FB/OB/FC/GlobalDB) found in the XML file")
         return None
     
     attr_list = block.find("AttributeList")
     if attr_list is None:
-        print(f"AttributeList not found in the {block_type} block")
+        logger.error(f"AttributeList not found in the {block_type} block")
         return None
     
     # Extract basic block information
@@ -89,13 +92,13 @@ def xml_to_json(xml_file, output_file=None):
             if interface_xmlns_match:
                 namespace_prefix = interface_xmlns_match.group(1)
                 sections_xmlns = interface_xmlns_match.group(2)
-                print(f"Found Interface xmlns with prefix {namespace_prefix}: {sections_xmlns}")
+                logger.info(f"Found Interface xmlns with prefix {namespace_prefix}: {sections_xmlns}")
             else:
                 # Hardcode as fallback since we know the value
                 sections_xmlns = "http://www.siemens.com/automation/Openness/SW/Interface/v5"
-                print(f"Using hardcoded Interface xmlns: {sections_xmlns}")
+                logger.info(f"Using hardcoded Interface xmlns: {sections_xmlns}")
         except Exception as e:
-            print(f"Warning: Could not extract interface XML: {e}")
+            logger.warning(f"Warning: Could not extract interface XML: {e}")
     
     # Find the Sections element, possibly with namespace
     sections = None
@@ -192,19 +195,19 @@ def xml_to_json(xml_file, output_file=None):
             network_source_xmlns_match = re.search(r'<StructuredText\s+xmlns=[\'"]([^\'"]+)[\'"]', network_source_text)
             if network_source_xmlns_match:
                 network_source_xmlns = network_source_xmlns_match.group(1)
-                print(f"Found NetworkSource xmlns: {network_source_xmlns}")
+                logger.info(f"Found NetworkSource xmlns: {network_source_xmlns}")
             else:
                 # Try alternate pattern for namespace
                 network_source_xmlns_match = re.search(r'xmlns:ns\d+=[\'"]([^\'"]+)[\'"]', network_source_text)
                 if network_source_xmlns_match:
                     network_source_xmlns = network_source_xmlns_match.group(1)
-                    print(f"Found NetworkSource xmlns (alternate): {network_source_xmlns}")
+                    logger.info(f"Found NetworkSource xmlns (alternate): {network_source_xmlns}")
                 else:
-                    print("Warning: Could not find StructuredText xmlns in the NetworkSource")
+                    logger.warning("Warning: Could not find StructuredText xmlns in the NetworkSource")
         except Exception as e:
-            print(f"Warning: Could not extract NetworkSource XML: {e}")
+            logger.warning(f"Warning: Could not extract NetworkSource XML: {e}")
     else:
-        print("Warning: NetworkSource element not found in the XML")
+        logger.warning("Warning: NetworkSource element not found in the XML")
     
     # Add NetworkSource xmlns to metadata
     json_data["metadata"]["xmlNamespaceInfo"]["networkSource"]["namespace"] = network_source_xmlns
@@ -227,7 +230,7 @@ def xml_to_json(xml_file, output_file=None):
             for ns in known_namespaces:
                 structured_text = network_source.find(f"{{{ns}}}StructuredText")
                 if structured_text is not None:
-                    print(f"Found StructuredText with namespace: {ns}")
+                    logger.info(f"Found StructuredText with namespace: {ns}")
                     break
             
             # Approach 2: If not found, try without namespace specification
@@ -235,7 +238,7 @@ def xml_to_json(xml_file, output_file=None):
                 for elem in network_source.iter():
                     if elem.tag.endswith("}StructuredText") or elem.tag == "StructuredText":
                         structured_text = elem
-                        print(f"Found StructuredText element: {elem.tag}")
+                        logger.info(f"Found StructuredText element: {elem.tag}")
                         break
             
             if structured_text is not None:
@@ -362,7 +365,7 @@ def xml_to_json(xml_file, output_file=None):
                                 tokens_buffer.append(const_value.text)
                             else:
                                 # Debug: print what we're looking for
-                                print(f"Warning: ConstantValue not found for LiteralConstant, child elements: {[elem.tag for elem in child]}")
+                                logger.warning(f"Warning: ConstantValue not found for LiteralConstant, child elements: {[elem.tag for elem in child]}")
                                 
                         elif scope == "TypedConstant":
                             # Look for ConstantValue element
@@ -381,7 +384,7 @@ def xml_to_json(xml_file, output_file=None):
                                         found_value = True
                                         break
                             if not found_value:
-                                print(f"Warning: ConstantValue not found for TypedConstant, child elements: {[elem.tag for elem in child]}")
+                                logger.warning(f"Warning: ConstantValue not found for TypedConstant, child elements: {[elem.tag for elem in child]}")
                                     
                         elif scope == "Call":
                             # Handle function/block calls - process all child elements
@@ -417,13 +420,13 @@ def xml_to_json(xml_file, output_file=None):
                             if statement.strip():
                                 code_lines.append(statement.strip() + ";")
             else:
-                print("Warning: StructuredText element not found in the NetworkSource")
+                logger.warning("Warning: StructuredText element not found in the NetworkSource")
                 
                 # Last resort: try to extract directly from NetworkSource
                 if network_source.text and network_source.text.strip():
                     code_lines = [line.strip() for line in network_source.text.split("\n") if line.strip()]
         except Exception as e:
-            print(f"Error extracting code: {e}")
+            logger.error(f"Error extracting code: {e}")
     
     # Add code lines to JSON
     json_data["code"] = code_lines
@@ -448,7 +451,7 @@ def xml_to_json(xml_file, output_file=None):
         
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(json_content)
-    print(f"Converted to JSON: {output_file}")
+    logger.info(f"Converted to JSON: {output_file}")
     
     return json_content
 
@@ -505,11 +508,11 @@ def patched_xml_to_json(xml_file, output_file=None):
         tree = ET.parse(xml_file)
         root = tree.getroot()
     except ET.ParseError as e:
-        print(f"XML parsing error: {e}")
+        logger.error(f"XML parsing error: {e}")
         return None
     
     # Debug: Print root tag
-    print(f"Root tag: {root.tag}")
+    logger.debug(f"Root tag: {root.tag}")
     
     # Find the block in the document (FB, OB, FC, or GlobalDB)
     block = None
@@ -590,9 +593,9 @@ def patched_xml_to_json(xml_file, output_file=None):
         # Find CompileUnit for code extraction
         compile_unit = block.find(".//SW.Blocks.CompileUnit")
         if compile_unit is not None:
-            print("Found CompileUnit")
+            logger.info("Found CompileUnit")
         else:
-            print("CompileUnit not found")
+            logger.warning("CompileUnit not found")
         
         # Extract code from NetworkSource
         network_source = find_network_source(compile_unit)
@@ -638,7 +641,7 @@ def patched_xml_to_json(xml_file, output_file=None):
         
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(json_content)
-    print(f"Converted to JSON: {output_file}")
+    logger.info(f"Converted to JSON: {output_file}")
     
     return json_content
 
@@ -895,7 +898,7 @@ def extract_code_from_network_source(network_source):
         for child in network_source:
             if "StructuredText" in child.tag:
                 structured_text = child
-                print(f"Found StructuredText element: {child.tag}")
+                logger.info(f"Found StructuredText element: {child.tag}")
                 break
         
         if structured_text is not None:
@@ -1033,7 +1036,7 @@ def extract_code_from_network_source(network_source):
                     formatted_lines.append(line)
             code_lines = formatted_lines
     except Exception as e:
-        print(f"Error extracting code: {e}")
+        logger.error(f"Error extracting code: {e}")
             
     return code_lines
 
@@ -1099,7 +1102,7 @@ def format_long_function_call(line):
 
 def xml_to_structured_text(xml_file, output_file=None):
     """For backward compatibility"""
-    print("This function is deprecated. Please use xml_to_json instead.")
+    logger.warning("This function is deprecated. Please use xml_to_json instead.")
     return xml_to_json(xml_file, output_file)
 
 # Main execution block for when this script is run directly
