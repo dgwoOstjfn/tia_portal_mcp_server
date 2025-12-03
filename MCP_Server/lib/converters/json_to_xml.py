@@ -24,16 +24,34 @@ class TIAXMLGenerator:
             'AND', 'OR', 'XOR', 'NOT', '&', 'THEN', 'ELSE', 'ELSEIF',
             'DO', 'TO', 'BY', ';', '(', ')', '[', ']', ',', '.', ':'
         ]
+        # Control flow and structure keywords (rendered as <Token>)
         self.scl_keywords = [
             'IF', 'THEN', 'ELSE', 'ELSIF', 'ELSEIF', 'END_IF', 'CASE', 'OF', 'END_CASE',
             'FOR', 'TO', 'BY', 'DO', 'END_FOR', 'WHILE', 'END_WHILE',
             'REPEAT', 'UNTIL', 'END_REPEAT', 'EXIT', 'CONTINUE', 'RETURN',
-            'TRUE', 'FALSE', 'AND', 'OR', 'XOR', 'NOT', 'REGION', 'END_REGION',
-            'ABS', 'MIN', 'MAX', 'LIMIT', 'SEL', 'MUX',
-            'SHR', 'SHL', 'ROR', 'ROL',
-            'FIND', 'REPLACE', 'DELETE', 'INSERT', 'LEFT', 'RIGHT', 'MID', 'LEN', 'CONCAT',
-            'SQRT', 'SIN', 'COS', 'TAN', 'EXP', 'LN', 'LOG'
+            'TRUE', 'FALSE', 'AND', 'OR', 'XOR', 'NOT', 'REGION', 'END_REGION'
         ]
+        # Standard functions that need <Access Scope="Call"><Instruction> structure in V20/v4 XML
+        self.scl_functions = [
+            # Math functions
+            'ABS', 'MIN', 'MAX', 'LIMIT', 'SEL', 'MUX', 'SQRT', 'SQR',
+            'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'EXP', 'LN', 'LOG',
+            'TRUNC', 'ROUND', 'CEIL', 'FLOOR', 'FRAC',
+            # Bit operations
+            'SHR', 'SHL', 'ROR', 'ROL',
+            # String functions
+            'FIND', 'REPLACE', 'DELETE', 'INSERT', 'LEFT', 'RIGHT', 'MID', 'LEN', 'CONCAT',
+            # Type conversions
+            'INT_TO_REAL', 'REAL_TO_INT', 'DINT_TO_REAL', 'REAL_TO_DINT',
+            'BOOL_TO_INT', 'INT_TO_BOOL', 'BYTE_TO_INT', 'INT_TO_BYTE',
+            'WORD_TO_INT', 'INT_TO_WORD', 'DWORD_TO_DINT', 'DINT_TO_DWORD',
+            # Move/copy functions
+            'MOVE', 'MOVE_BLK', 'FILL_BLK', 'UMOVE_BLK', 'UFILL_BLK',
+            # Comparison
+            'EQ', 'NE', 'LT', 'LE', 'GT', 'GE',
+        ]
+        # State for tracking block comments across lines
+        self.in_block_comment = False
 
     def get_next_uid(self) -> str:
         """Get next UId for XML elements"""
@@ -49,14 +67,55 @@ class TIAXMLGenerator:
         """
         Tokenize SCL code line into (token_type, token_value) tuples
         Enhanced tokenization based on xml_to_json.py logic
+
+        Note: Leading whitespace (indentation) is preserved and converted to WHITESPACE tokens.
         """
         tokens = []
+
+        # Check if line is empty or only whitespace
+        if not line or not line.strip():
+            return tokens
+
+        # Preserve leading whitespace as indentation
+        # Count leading spaces (tabs are converted to 4 spaces for consistency)
+        leading_spaces = 0
+        for char in line:
+            if char == ' ':
+                leading_spaces += 1
+            elif char == '\t':
+                leading_spaces += 4  # Convert tab to 4 spaces
+            else:
+                break
+
+        # Add leading whitespace as first token if present
+        if leading_spaces > 0:
+            tokens.append(('WHITESPACE', str(leading_spaces)))
+
+        # Now strip the line for further processing
         line = line.strip()
         if not line:
             return tokens
 
         i = 0
         while i < len(line):
+            # Handle Block Comment Content if already inside one
+            if self.in_block_comment:
+                # Look for closing *)
+                close_idx = line.find('*)', i)
+                if close_idx != -1:
+                    # Found end of block comment
+                    content = line[i:close_idx]
+                    tokens.append(('BLOCK_COMMENT', content))
+                    self.in_block_comment = False
+                    i = close_idx + 2
+                    continue
+                else:
+                    # Rest of line is part of block comment
+                    content = line[i:]
+                    tokens.append(('BLOCK_COMMENT', content))
+                    i = len(line)
+                    continue
+
             # Handle whitespace
             if line[i].isspace():
                 space_count = 0
@@ -65,6 +124,35 @@ class TIAXMLGenerator:
                     i += 1
                 tokens.append(('WHITESPACE', str(space_count)))
                 continue
+
+            # Handle string constants (Check before comments to avoid false positives inside strings)
+            if line[i] in ['"', "'"]:
+                quote = line[i]
+                str_literal = quote
+                i += 1
+                while i < len(line) and line[i] != quote:
+                    str_literal += line[i]
+                    i += 1
+                if i < len(line):
+                    str_literal += line[i]
+                    i += 1
+                tokens.append(('CONSTANT', str_literal))
+                continue
+
+            # Handle Comments
+            if i + 1 < len(line):
+                # Single Line Comment //
+                if line[i] == '/' and line[i+1] == '/':
+                    content = line[i+2:]
+                    tokens.append(('LINE_COMMENT', content))
+                    break # End of line processing
+                
+                # Block Comment Start (*
+                if line[i] == '(' and line[i+1] == '*':
+                    self.in_block_comment = True
+                    i += 2
+                    # Continue loop to process content immediately
+                    continue
 
             # Handle addresses and slice access (starting with %)
             if line[i] == '%':
@@ -106,21 +194,7 @@ class TIAXMLGenerator:
                 tokens.append(('CONSTANT', num_str))
                 continue
 
-            # Handle string constants
-            if line[i] in ['"', "'"]:
-                quote = line[i]
-                str_literal = quote
-                i += 1
-                while i < len(line) and line[i] != quote:
-                    str_literal += line[i]
-                    i += 1
-                if i < len(line):
-                    str_literal += line[i]
-                    i += 1
-                tokens.append(('CONSTANT', str_literal))
-                continue
-
-            # Handle identifiers (variables, keywords)
+            # Handle identifiers (variables, keywords, functions)
             if line[i].isalpha() or line[i] == '_' or line[i] == '#':
                 identifier = ''
                 # Handle variable references with #
@@ -132,12 +206,14 @@ class TIAXMLGenerator:
                     identifier += line[i]
                     i += 1
 
-                # Check if it's a keyword or constant
-                if identifier.upper() in self.scl_keywords:
-                    if identifier.upper() in ['TRUE', 'FALSE']:
-                        tokens.append(('CONSTANT', identifier.upper()))
-                    else:
-                        tokens.append(('KEYWORD', identifier.upper()))
+                # Check if it's a keyword, function, or constant
+                upper_id = identifier.upper()
+                if upper_id in ['TRUE', 'FALSE']:
+                    tokens.append(('CONSTANT', upper_id))
+                elif upper_id in self.scl_functions:
+                    tokens.append(('FUNCTION', upper_id))
+                elif upper_id in self.scl_keywords:
+                    tokens.append(('KEYWORD', upper_id))
                 else:
                     tokens.append(('VARIABLE', identifier))
                 continue
@@ -176,6 +252,167 @@ class TIAXMLGenerator:
                     else:
                         xml_elements.append(f'  <Blank Num="{token_value}" UId="{self.get_next_uid()}" />')
                     i += 1
+
+                elif token_type == 'LINE_COMMENT':
+                    # Generate <LineComment> for single line comments
+                    lc_uid = self.get_next_uid()
+                    txt_uid = self.get_next_uid()
+                    xml_elements.append(f'  <LineComment UId="{lc_uid}">')
+                    xml_elements.append(f'    <Text UId="{txt_uid}">{self.escape_xml(token_value)}</Text>')
+                    xml_elements.append(f'  </LineComment>')
+                    i += 1
+
+                elif token_type == 'BLOCK_COMMENT':
+                    # Generate <LineComment Inserted="true"> for block comments
+                    lc_uid = self.get_next_uid()
+                    txt_uid = self.get_next_uid()
+                    xml_elements.append(f'  <LineComment Inserted="true" UId="{lc_uid}">')
+                    xml_elements.append(f'    <Text UId="{txt_uid}">{self.escape_xml(token_value)}</Text>')
+                    xml_elements.append(f'  </LineComment>')
+                    i += 1
+
+                elif token_type == 'FUNCTION':
+                    # SCL function call - check if followed by (
+                    # Look ahead to see if there's a ( (possibly with whitespace in between)
+                    lookahead = i + 1
+                    while lookahead < len(tokens) and tokens[lookahead][0] == 'WHITESPACE':
+                        lookahead += 1
+
+                    if lookahead < len(tokens) and tokens[lookahead][0] == 'OPERATOR' and tokens[lookahead][1] == '(':
+                        # This is a function call - generate <Access Scope="Call"><Instruction>
+                        access_uid = self.get_next_uid()
+                        instruction_uid = self.get_next_uid()
+
+                        xml_elements.append(f'  <Access Scope="Call" UId="{access_uid}">')
+                        xml_elements.append(f'    <Instruction Name="{self.escape_xml(token_value)}" UId="{instruction_uid}">')
+                        i += 1
+
+                        # Handle whitespace between function name and (
+                        while i < len(tokens) and tokens[i][0] == 'WHITESPACE':
+                            # Add blanks inside the instruction
+                            ws_val = tokens[i][1]
+                            if ws_val == '1':
+                                xml_elements.append(f'      <Blank UId="{self.get_next_uid()}" />')
+                            else:
+                                xml_elements.append(f'      <Blank Num="{ws_val}" UId="{self.get_next_uid()}" />')
+                            i += 1
+
+                        # Now consume the opening (
+                        if i < len(tokens) and tokens[i][0] == 'OPERATOR' and tokens[i][1] == '(':
+                            xml_elements.append(f'      <Token Text="(" UId="{self.get_next_uid()}" />')
+                            i += 1
+
+                            # Parse parameters until closing )
+                            # Parameters are separated by commas, can be nested expressions
+                            param_depth = 1
+                            param_elements = []
+                            param_start_uid = None
+
+                            while i < len(tokens) and param_depth > 0:
+                                pt, pv = tokens[i]
+
+                                if pt == 'OPERATOR' and pv == '(':
+                                    param_depth += 1
+                                    param_elements.append(f'        <Token Text="(" UId="{self.get_next_uid()}" />')
+                                    i += 1
+                                elif pt == 'OPERATOR' and pv == ')':
+                                    param_depth -= 1
+                                    if param_depth == 0:
+                                        # Close any open parameter
+                                        if param_elements:
+                                            param_uid = self.get_next_uid()
+                                            xml_elements.append(f'      <NamelessParameter UId="{param_uid}">')
+                                            xml_elements.extend(param_elements)
+                                            xml_elements.append('      </NamelessParameter>')
+                                            param_elements = []
+                                        # Add closing paren
+                                        xml_elements.append(f'      <Token Text=")" UId="{self.get_next_uid()}" />')
+                                        i += 1
+                                    else:
+                                        param_elements.append(f'        <Token Text=")" UId="{self.get_next_uid()}" />')
+                                        i += 1
+                                elif pt == 'OPERATOR' and pv == ',' and param_depth == 1:
+                                    # Parameter separator - close current parameter, start new one
+                                    if param_elements:
+                                        param_uid = self.get_next_uid()
+                                        xml_elements.append(f'      <NamelessParameter UId="{param_uid}">')
+                                        xml_elements.extend(param_elements)
+                                        xml_elements.append('      </NamelessParameter>')
+                                        param_elements = []
+                                    xml_elements.append(f'      <Token Text="," UId="{self.get_next_uid()}" />')
+                                    i += 1
+                                elif pt == 'WHITESPACE':
+                                    ws_val = pv
+                                    if ws_val == '1':
+                                        param_elements.append(f'        <Blank UId="{self.get_next_uid()}" />')
+                                    else:
+                                        param_elements.append(f'        <Blank Num="{ws_val}" UId="{self.get_next_uid()}" />')
+                                    i += 1
+                                elif pt == 'VARIABLE':
+                                    # Variable in parameter
+                                    var_name = pv
+                                    scope = "LocalVariable"
+                                    if var_name.startswith('#'):
+                                        var_name = var_name[1:]
+                                    elif var_name.startswith('"') and var_name.endswith('"'):
+                                        scope = "GlobalVariable"
+                                        var_name = var_name[1:-1]
+
+                                    acc_uid = self.get_next_uid()
+                                    sym_uid = self.get_next_uid()
+                                    comp_uid = self.get_next_uid()
+                                    param_elements.append(f'        <Access Scope="{scope}" UId="{acc_uid}">')
+                                    param_elements.append(f'          <Symbol UId="{sym_uid}">')
+                                    param_elements.append(f'            <Component Name="{self.escape_xml(var_name)}" UId="{comp_uid}" />')
+
+                                    # Check for member access
+                                    i += 1
+                                    while i < len(tokens) and tokens[i][0] == 'OPERATOR' and tokens[i][1] == '.':
+                                        param_elements.append(f'            <Token Text="." UId="{self.get_next_uid()}" />')
+                                        i += 1
+                                        if i < len(tokens) and tokens[i][0] == 'VARIABLE':
+                                            mem_name = tokens[i][1]
+                                            mem_uid = self.get_next_uid()
+                                            param_elements.append(f'            <Component Name="{self.escape_xml(mem_name)}" UId="{mem_uid}" />')
+                                            i += 1
+                                        elif i < len(tokens) and tokens[i][0] == 'ADDRESS':
+                                            addr_uid = self.get_next_uid()
+                                            param_elements.append(f'            <Token Text="{self.escape_xml(tokens[i][1])}" UId="{addr_uid}" />')
+                                            i += 1
+                                        else:
+                                            break
+
+                                    param_elements.append('          </Symbol>')
+                                    param_elements.append('        </Access>')
+                                elif pt == 'CONSTANT':
+                                    scope = "TypedConstant" if pv.startswith('T#') else "LiteralConstant"
+                                    acc_uid = self.get_next_uid()
+                                    const_uid = self.get_next_uid()
+                                    val_uid = self.get_next_uid()
+                                    param_elements.append(f'        <Access Scope="{scope}" UId="{acc_uid}">')
+                                    param_elements.append(f'          <Constant UId="{const_uid}">')
+                                    param_elements.append(f'            <ConstantValue UId="{val_uid}">{self.escape_xml(pv)}</ConstantValue>')
+                                    param_elements.append('          </Constant>')
+                                    param_elements.append('        </Access>')
+                                    i += 1
+                                elif pt in ['KEYWORD', 'OPERATOR']:
+                                    param_elements.append(f'        <Token Text="{self.escape_xml(pv)}" UId="{self.get_next_uid()}" />')
+                                    i += 1
+                                elif pt == 'FUNCTION':
+                                    # Nested function call - for now just treat as token
+                                    # TODO: Full recursive function call handling
+                                    param_elements.append(f'        <Token Text="{self.escape_xml(pv)}" UId="{self.get_next_uid()}" />')
+                                    i += 1
+                                else:
+                                    param_elements.append(f'        <Token Text="{self.escape_xml(pv)}" UId="{self.get_next_uid()}" />')
+                                    i += 1
+
+                        xml_elements.append('    </Instruction>')
+                        xml_elements.append('  </Access>')
+                    else:
+                        # Function name without () - just treat as token
+                        xml_elements.append(f'  <Token Text="{self.escape_xml(token_value)}" UId="{self.get_next_uid()}" />')
+                        i += 1
 
                 elif token_type in ['KEYWORD', 'OPERATOR']:
                     # Keywords and operators as tokens
@@ -299,13 +536,15 @@ class TIAXMLGenerator:
                     xml_elements.append(f'      <ConstantValue UId="{value_uid}">{self.escape_xml(token_value)}</ConstantValue>')
                     xml_elements.append('    </Constant>')
                     xml_elements.append('  </Access>')
+                    i += 1
 
                 else:
                     # Unknown types as tokens
                     xml_elements.append(f'  <Token Text="{self.escape_xml(token_value)}" UId="{self.get_next_uid()}" />')
+                    i += 1
 
         # Assemble complete StructuredText element
-        structured_text = '<StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3">\n'
+        structured_text = '<StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4">\n'
         structured_text += '\n'.join(xml_elements)
         structured_text += '\n</StructuredText>'
 
@@ -339,6 +578,7 @@ def get_xml_template(block_type: str) -> str:
       <MemoryLayout>{memory_layout}</MemoryLayout>
       <MemoryReserve>{memory_reserve}</MemoryReserve>
       <Name>{block_name}</Name>
+      <Namespace />
       <Number>{block_number}</Number>
       <ProgrammingLanguage>{programming_language}</ProgrammingLanguage>
       <SetENOAutomatically>{eno_setting}</SetENOAutomatically>
@@ -409,6 +649,7 @@ def get_xml_template(block_type: str) -> str:
       <Interface>{sections_xml}</Interface>
       <MemoryLayout>{memory_layout}</MemoryLayout>
       <Name>{block_name}</Name>
+      <Namespace />
       <Number>{block_number}</Number>
       <ProgrammingLanguage>{programming_language}</ProgrammingLanguage>
       <SetENOAutomatically>{eno_setting}</SetENOAutomatically>
@@ -479,6 +720,7 @@ def get_xml_template(block_type: str) -> str:
       <Interface>{sections_xml}</Interface>
       <MemoryLayout>{memory_layout}</MemoryLayout>
       <Name>{block_name}</Name>
+      <Namespace />
       <Number>{block_number}</Number>
       <ProgrammingLanguage>{programming_language}</ProgrammingLanguage>
       <SecondaryType>ProgramCycle</SecondaryType>
@@ -551,6 +793,7 @@ def get_xml_template(block_type: str) -> str:
       <MemoryLayout>{memory_layout}</MemoryLayout>
       <MemoryReserve>{memory_reserve}</MemoryReserve>
       <Name>{block_name}</Name>
+      <Namespace />
       <Number>{block_number}</Number>
       <ProgrammingLanguage>DB</ProgrammingLanguage>
     </AttributeList>

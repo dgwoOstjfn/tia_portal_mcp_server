@@ -4,7 +4,7 @@ Converts JSON representation to readable SCL (Structured Control Language) forma
 """
 import json
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 
 class JSONToSCLConverter:
@@ -15,9 +15,8 @@ class JSONToSCLConverter:
         
     def convert_datatype(self, datatype: str) -> str:
         """Convert JSON datatype to proper SCL format"""
-        # Remove quotes from UDT types
-        if datatype.startswith('"') and datatype.endswith('"'):
-            return datatype[1:-1]
+        # Keep quotes for UDT types - TIA Portal SCL requires quoted UDT references
+        # e.g., "Rmaxis_IoIn" stays as "Rmaxis_IoIn"
         return datatype
     
     def generate_variable_section(self, section_name: str, variables: List[Dict[str, str]]) -> List[str]:
@@ -57,18 +56,26 @@ class JSONToSCLConverter:
             for variable in regular_variables:
                 var_name = variable.get("name", "")
                 var_datatype = self.convert_datatype(variable.get("datatype", ""))
-                
+                default_value = variable.get("default_value", "")
+
                 if var_name and var_datatype:
                     # Special handling for struct variables
                     if var_name == "stSensor" and var_datatype == "Struct":
                         section_lines.extend(self.generate_struct_definition(var_name))
                     else:
-                        # Add variable attributes based on reference SCL
-                        attributes = self.get_variable_attributes(var_name, section_name)
-                        if attributes:
-                            section_lines.append(f"  {var_name} {attributes} : {var_datatype};")
+                        # Get variable attributes from JSON data
+                        attributes = self.get_variable_attributes(variable)
+                        # Build variable declaration with optional default value
+                        if default_value:
+                            if attributes:
+                                section_lines.append(f"  {var_name} {attributes} : {var_datatype} := {default_value};")
+                            else:
+                                section_lines.append(f"  {var_name} : {var_datatype} := {default_value};")
                         else:
-                            section_lines.append(f"  {var_name} : {var_datatype};")
+                            if attributes:
+                                section_lines.append(f"  {var_name} {attributes} : {var_datatype};")
+                            else:
+                                section_lines.append(f"  {var_name} : {var_datatype};")
             
             section_lines.append("END_VAR")
             section_lines.append("")  # Empty line after section
@@ -79,34 +86,58 @@ class JSONToSCLConverter:
             for variable in retain_variables:
                 var_name = variable.get("name", "")
                 var_datatype = self.convert_datatype(variable.get("datatype", ""))
-                
+                default_value = variable.get("default_value", "")
+
                 if var_name and var_datatype:
-                    attributes = self.get_variable_attributes(var_name, section_name)
-                    if attributes:
-                        section_lines.append(f"  {var_name} {attributes} : {var_datatype};")
+                    attributes = self.get_variable_attributes(variable)
+                    # Build variable declaration with optional default value
+                    if default_value:
+                        if attributes:
+                            section_lines.append(f"  {var_name} {attributes} : {var_datatype} := {default_value};")
+                        else:
+                            section_lines.append(f"  {var_name} : {var_datatype} := {default_value};")
                     else:
-                        section_lines.append(f"  {var_name} : {var_datatype};")
+                        if attributes:
+                            section_lines.append(f"  {var_name} {attributes} : {var_datatype};")
+                        else:
+                            section_lines.append(f"  {var_name} : {var_datatype};")
             
             section_lines.append("END_VAR")
             section_lines.append("")
         
         return section_lines
     
-    def get_variable_attributes(self, var_name: str, section_name: str) -> str:
-        """Get variable attributes based on the reference SCL"""
-        # Common attributes for most variables
-        common_attrs = "{ ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'}"
-        
-        # Special cases based on variable name and section
-        if section_name == "input_section":
-            return common_attrs
-        elif var_name.startswith("aActualHMIStatusDrive"):
-            return "{ ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'}"
-        elif var_name.startswith("fb"):  # Function block instances
-            return "{ ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'}"
-        elif section_name == "static_section" and not var_name.startswith("st"):
-            return common_attrs
-        
+    def get_variable_attributes(self, variable: Dict[str, Any]) -> str:
+        """Build variable attributes string from JSON data
+
+        Formats attributes like:
+        - Simple: { S7_SetPoint := 'False'}
+        - Timer/FB: {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'}
+        """
+        attr_parts = []
+
+        # Get datatype for potential InstructionName
+        datatype = variable.get("datatype", "")
+        version = variable.get("version", "")
+        attributes = variable.get("attributes", {})
+
+        # For timer/FB types (TON_TIME, TOF_TIME, etc.), add InstructionName and LibVersion
+        if version and datatype:
+            # Clean datatype (remove quotes if present)
+            clean_datatype = datatype.strip('"')
+            attr_parts.append(f"InstructionName := '{clean_datatype}'")
+            attr_parts.append(f"LibVersion := '{version}'")
+
+        # Add S7_SetPoint and other attributes
+        for attr_name, attr_value in attributes.items():
+            # Format attribute name with S7_ prefix if not present
+            formatted_name = f"S7_{attr_name}" if not attr_name.startswith("S7_") else attr_name
+            # Capitalize boolean values
+            formatted_value = attr_value.capitalize() if attr_value.lower() in ['true', 'false'] else attr_value
+            attr_parts.append(f"{formatted_name} := '{formatted_value}'")
+
+        if attr_parts:
+            return "{ " + "; ".join(attr_parts) + " }"
         return ""
     
     def generate_struct_definition(self, struct_name: str) -> List[str]:

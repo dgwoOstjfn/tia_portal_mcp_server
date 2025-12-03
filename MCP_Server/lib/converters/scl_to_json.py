@@ -26,7 +26,7 @@ class SCLToJSONConverter:
             "memoryLayout": "Optimized",
             "memoryReserve": "100",
             "enoSetting": "false",
-            "engineeringVersion": "V17",
+            "engineeringVersion": "V20",
             "description": "TIA Portal block converted from SCL",
             "returnType": None,  # For FC return type
             "xmlNamespaceInfo": {
@@ -35,8 +35,8 @@ class SCLToJSONConverter:
                     "description": "XML namespace for the Interface/Sections elements"
                 },
                 "networkSource": {
-                    "namespace": "http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3",
-                    "description": "XML namespace for the NetworkSource/StructuredText elements"
+                    "namespace": "http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v4",
+                    "description": "XML namespace for the NetworkSource/StructuredText elements (V20 compatible)"
                 }
             }
         }
@@ -305,8 +305,115 @@ class SCLToJSONConverter:
             # Remove leading empty lines
             while code_lines and not code_lines[0]:
                 code_lines.pop(0)
+            
+            # Auto-format the code with indentation
+            code_lines = self.format_scl_code(code_lines)
 
         return code_lines
+    
+    def format_scl_code(self, code_lines: List[str]) -> List[str]:
+        """Format SCL code with proper indentation using stack-based context tracking.
+
+        This method handles context-sensitive indentation for SCL constructs:
+        - IF...THEN...ELSIF...ELSE...END_IF
+        - CASE...OF...ELSE...END_CASE (ELSE stays at case-label level, body indented)
+        - FOR...TO...DO...END_FOR
+        - WHILE...DO...END_WHILE
+        - REPEAT...UNTIL
+        - REGION...END_REGION
+        """
+        formatted_lines = []
+        indent_stack = []  # Stack of block types for context tracking
+        indent_str = "    "  # 4 spaces
+
+        # Block openers mapped to their closers
+        block_pairs = {
+            'IF': 'END_IF',
+            'CASE': 'END_CASE',
+            'FOR': 'END_FOR',
+            'WHILE': 'END_WHILE',
+            'REPEAT': 'UNTIL',
+            'REGION': 'END_REGION'
+        }
+
+        openers = set(block_pairs.keys())
+        closers = set(block_pairs.values())
+        middle_keywords = {'ELSIF', 'ELSE'}
+
+        for line in code_lines:
+            stripped = line.strip()
+            if not stripped:
+                formatted_lines.append("")
+                continue
+
+            # Clean line for analysis (remove comments and strings)
+            clean_line = re.sub(r'//.*', '', stripped)
+            clean_line = re.sub(r'\(\*.*?\*\)', '', clean_line)
+            clean_line = re.sub(r"'.*?'", '', clean_line)
+            clean_line = re.sub(r'".*?"', '', clean_line)
+
+            if not clean_line.strip():
+                # Line only contained comments, keep current indent
+                formatted_lines.append((indent_str * len(indent_stack)) + stripped)
+                continue
+
+            upper_line = clean_line.upper()
+            tokens = re.findall(r'\b\w+\b', upper_line)
+
+            if not tokens:
+                formatted_lines.append((indent_str * len(indent_stack)) + stripped)
+                continue
+
+            first_token = tokens[0]
+            current_indent = len(indent_stack)
+
+            # Determine print level based on first token and context
+            if first_token in closers:
+                # Closing keyword - dedent for this line
+                # Also pop any CASE_ELSE markers before the actual block
+                while indent_stack and indent_stack[-1] == 'CASE_ELSE':
+                    indent_stack.pop()
+                    current_indent = len(indent_stack)
+                print_level = max(0, current_indent - 1)
+            elif first_token in middle_keywords:
+                # ELSE/ELSIF - context-sensitive handling
+                # First, pop any CASE_ELSE marker (for chained ELSE after ELSE, though rare)
+                if indent_stack and indent_stack[-1] == 'CASE_ELSE':
+                    indent_stack.pop()
+                    current_indent = len(indent_stack)
+
+                if indent_stack and indent_stack[-1] == 'IF':
+                    # In IF context: dedent ELSE/ELSIF to match IF level
+                    print_level = max(0, current_indent - 1)
+                elif indent_stack and indent_stack[-1] == 'CASE':
+                    # In CASE context: keep ELSE at current level (same as case labels)
+                    print_level = current_indent
+                else:
+                    # Unknown context, keep current
+                    print_level = current_indent
+            else:
+                print_level = current_indent
+
+            formatted_lines.append((indent_str * print_level) + stripped)
+
+            # Update stack based on all tokens in line (handles single-line constructs)
+            for token in tokens:
+                if token in openers:
+                    indent_stack.append(token)
+                elif token in closers:
+                    if indent_stack:
+                        # Pop any CASE_ELSE markers first
+                        while indent_stack and indent_stack[-1] == 'CASE_ELSE':
+                            indent_stack.pop()
+                        # Pop matching opener (or any opener if mismatched)
+                        if indent_stack:
+                            indent_stack.pop()
+
+            # After processing, if line was ELSE in CASE context, push marker for body indent
+            if first_token == 'ELSE' and indent_stack and indent_stack[-1] == 'CASE':
+                indent_stack.append('CASE_ELSE')
+
+        return formatted_lines
     
     def scl_to_json(self, scl_file: str, output_json_file: str = None) -> str:
         """

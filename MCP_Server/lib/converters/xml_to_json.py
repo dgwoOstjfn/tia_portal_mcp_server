@@ -10,17 +10,42 @@ def process_member_recursively(member, level=0):
     """Recursively process member elements, handling nested structs"""
     var_name = member.get("Name")
     var_type = member.get("Datatype")
-    
+
     if var_name is None or var_type is None:
         return None
-    
+
     # Create the member object
     member_obj = {
         "name": var_name,
         "datatype": var_type,
         "level": level
     }
-    
+
+    # Extract Version attribute for FB/timer types (TON_TIME, etc.)
+    version = member.get("Version")
+    if version:
+        member_obj["version"] = version
+
+    # Process child elements
+    for child in member:
+        child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+
+        # Extract default value (StartValue element)
+        if child_tag == "StartValue" and child.text:
+            member_obj["default_value"] = child.text
+
+        # Extract attributes (SetPoint, etc.)
+        elif child_tag == "AttributeList":
+            attributes = {}
+            for attr in child:
+                attr_tag = attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
+                if attr_tag == "BooleanAttribute":
+                    attr_name = attr.get("Name")
+                    if attr_name and attr.text:
+                        attributes[attr_name] = attr.text.lower()
+            if attributes:
+                member_obj["attributes"] = attributes
+
     # If this is a struct, recursively process its nested members
     if var_type == "Struct":
         nested_members = []
@@ -30,10 +55,10 @@ def process_member_recursively(member, level=0):
                 nested_member = process_member_recursively(child, level + 1)
                 if nested_member:
                     nested_members.append(nested_member)
-        
+
         if nested_members:
             member_obj["members"] = nested_members
-    
+
     return member_obj
 
 def xml_to_json(xml_file, output_file=None):
@@ -265,13 +290,21 @@ def xml_to_json(xml_file, output_file=None):
                         if child.text:
                             tokens_buffer.append(child.text)
                     elif tag_name == "LineComment":
-                        # Handle line comments
+                        # Handle comments - check if it's a block comment (Inserted="true") or line comment
+                        is_block_comment = child.get("Inserted", "").lower() == "true"
                         comment_text = ""
-                        for text_elem in child.findall(".//Text"):
-                            if text_elem.text:
-                                comment_text += text_elem.text
+                        # Iterate over children to handle namespace - findall won't work with namespaced elements
+                        for sub_elem in child.iter():
+                            sub_tag = sub_elem.tag.split("}")[-1] if "}" in sub_elem.tag else sub_elem.tag
+                            if sub_tag == "Text" and sub_elem.text:
+                                comment_text += sub_elem.text
                         if comment_text:
-                            tokens_buffer.append("// " + comment_text)
+                            if is_block_comment:
+                                # Multi-line block comment wrapped in (* ... *)
+                                tokens_buffer.append("(*" + comment_text + "*)")
+                            else:
+                                # Single line comment prefixed with //
+                                tokens_buffer.append("//" + comment_text)
                     elif tag_name == "Access":
                         # Handle different scope types with proper SCL formatting:
                         # - LocalVariable: prefix with # (e.g., #stSensor.bCarrierAtPreStop)
@@ -279,7 +312,7 @@ def xml_to_json(xml_file, output_file=None):
                         # - LiteralConstant/TypedConstant: output value directly (e.g., FALSE, T#8s)
                         # - Call: handle function/block calls
                         scope = child.get("Scope", "")
-                        
+
                         if scope == "LocalVariable":
                             # Look for Symbol/Component structure
                             symbol = None
@@ -720,19 +753,133 @@ def process_component_with_array(comp_elem, tokens_buffer, prefix="", suffix="")
                             if const_child.text:
                                 tokens_buffer.append(const_child.text)
 
+def process_nameless_parameter(param_elem, tokens_buffer):
+    """Process a NamelessParameter element to extract its content (for ABS, MIN, etc.)"""
+    for child in param_elem:
+        tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+
+        if tag_name == "Token":
+            tokens_buffer.append(child.get("Text", ""))
+        elif tag_name == "Blank":
+            num = int(child.get("Num", "1"))
+            tokens_buffer.append(" " * num)
+        elif tag_name == "Access":
+            # Handle access within nameless parameters
+            scope = child.get("Scope", "")
+            if scope == "LocalVariable":
+                symbol = None
+                for sub_elem in child:
+                    if sub_elem.tag.endswith("}Symbol") or sub_elem.tag == "Symbol":
+                        symbol = sub_elem
+                        break
+                if symbol is not None:
+                    first_component = True
+                    for elem in symbol:
+                        elem_tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                        if elem_tag == "Component":
+                            if first_component:
+                                process_component_with_array(elem, tokens_buffer, "#")
+                                first_component = False
+                            else:
+                                process_component_with_array(elem, tokens_buffer, "")
+                        elif elem_tag == "Token":
+                            tokens_buffer.append(elem.get("Text", ""))
+                else:
+                    for comp in child.findall(".//*"):
+                        if comp.tag.endswith("}Component") or comp.tag == "Component":
+                            tokens_buffer.append(f"#{comp.get('Name', '')}")
+                            break
+            elif scope == "GlobalVariable" or scope == "GlobalConstant":
+                symbol = None
+                constant = None
+                for sub_elem in child:
+                    if sub_elem.tag.endswith("}Symbol") or sub_elem.tag == "Symbol":
+                        symbol = sub_elem
+                        break
+                    elif sub_elem.tag.endswith("}Constant") or sub_elem.tag == "Constant":
+                        constant = sub_elem
+                        break
+                if symbol is not None:
+                    first_component = True
+                    for elem in symbol:
+                        elem_tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                        if elem_tag == "Component":
+                            if first_component:
+                                process_component_with_array(elem, tokens_buffer, '"')
+                                tokens_buffer.append('"')
+                                first_component = False
+                            else:
+                                process_component_with_array(elem, tokens_buffer, "")
+                        elif elem_tag == "Token":
+                            tokens_buffer.append(elem.get("Text", ""))
+                elif constant is not None:
+                    const_name = constant.get("Name", "")
+                    if const_name:
+                        tokens_buffer.append(f'"{const_name}"')
+            elif scope == "LiteralConstant":
+                for constant in child.findall(".//*"):
+                    if constant.tag.endswith("}ConstantValue") or constant.tag == "ConstantValue":
+                        tokens_buffer.append(constant.text or "")
+                        break
+            elif scope == "TypedConstant":
+                for constant in child.findall(".//*"):
+                    if constant.tag.endswith("}ConstantValue") or constant.tag == "ConstantValue":
+                        tokens_buffer.append(constant.text or "")
+                        break
+            elif scope == "Call":
+                call_tokens = []
+                process_call_element(child, call_tokens)
+                tokens_buffer.extend(call_tokens)
+
+
 def process_call_element(call_elem, tokens_buffer):
     """Process a Call element recursively to extract all tokens"""
     for child in call_elem:
         tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        
-        if tag_name == "CallInfo":
-            # Get block type to handle FC vs FB calls
+
+        if tag_name == "Instruction":
+            # Handle Instruction elements (for ABS, MIN, timer calls, etc.)
+            func_name = child.get("Name", "")  # System functions have Name attribute
+            if func_name:
+                tokens_buffer.append(func_name)
+
+            # Process Instruction children
+            for inst_child in child:
+                inst_tag = inst_child.tag.split("}")[-1] if "}" in inst_child.tag else inst_child.tag
+
+                if inst_tag == "Token":
+                    tokens_buffer.append(inst_child.get("Text", ""))
+                elif inst_tag == "Blank":
+                    num = int(inst_child.get("Num", "1"))
+                    tokens_buffer.append(" " * num)
+                elif inst_tag == "NamelessParameter":
+                    # Process nameless parameter content (for ABS, etc.)
+                    process_nameless_parameter(inst_child, tokens_buffer)
+                elif inst_tag == "Parameter":
+                    # Process named parameter (for timer calls, etc.)
+                    process_parameter_element(inst_child, tokens_buffer)
+                elif inst_tag == "NewLine":
+                    pass  # Skip newlines in function calls
+
+        elif tag_name == "CallInfo":
+            # Get block type and function name to handle FC vs FB calls
             block_type = child.get("BlockType", "")
-            
+            func_name = child.get("Name", "")  # System functions (ABS, MIN, etc.) have name here
+
+            # Check if this is a system function (no Instance child)
+            has_instance = any(
+                (c.tag.split("}")[-1] if "}" in c.tag else c.tag) == "Instance"
+                for c in child
+            )
+
+            # For system functions without instance, output the function name directly
+            if func_name and not has_instance:
+                tokens_buffer.append(func_name)
+
             # Process CallInfo children
             for call_child in child:
                 call_tag = call_child.tag.split("}")[-1] if "}" in call_child.tag else call_child.tag
-                
+
                 if call_tag == "Instance":
                     # Handle instance based on scope
                     scope = call_child.get("Scope", "")
@@ -787,14 +934,18 @@ def process_parameter_element(param_elem, tokens_buffer):
     # Parameter name is an attribute, not a token
     param_name = param_elem.get("Name", "")
     if param_name:
-        tokens_buffer.append(param_name)
-    
+        tokens_buffer.append(param_name + " := ")  # Add assignment operator for SCL syntax
+
     # Process parameter content
     for child in param_elem:
         tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        
+
         if tag_name == "Token":
-            tokens_buffer.append(child.get("Text", ""))
+            # Skip the := token since we already added it above
+            token_text = child.get("Text", "")
+            if token_text == ":=":
+                continue
+            tokens_buffer.append(token_text)
         elif tag_name == "Blank":
             num = int(child.get("Num", "1"))
             tokens_buffer.append(" " * num)
@@ -885,6 +1036,89 @@ def process_parameter_element(param_elem, tokens_buffer):
                             tokens_buffer.append(constant.text or "")
                             break
 
+def process_unknown_container(element, tokens_buffer):
+    """Recursively process unknown container elements (Expression, Term, etc.) to extract tokens"""
+    for child in element:
+        tag_name = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+
+        if tag_name == "Token":
+            tokens_buffer.append(child.get("Text", ""))
+        elif tag_name == "Blank":
+            num = int(child.get("Num", "1"))
+            tokens_buffer.append(" " * num)
+        elif tag_name == "Access":
+            # Handle Access elements within containers
+            scope = child.get("Scope", "")
+            if scope == "LocalVariable":
+                symbol = None
+                for sub_elem in child:
+                    if sub_elem.tag.endswith("}Symbol") or sub_elem.tag == "Symbol":
+                        symbol = sub_elem
+                        break
+                if symbol is not None:
+                    first_component = True
+                    for elem in symbol:
+                        elem_tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                        if elem_tag == "Component":
+                            if first_component:
+                                process_component_with_array(elem, tokens_buffer, "#")
+                                first_component = False
+                            else:
+                                process_component_with_array(elem, tokens_buffer, "")
+                        elif elem_tag == "Token":
+                            tokens_buffer.append(elem.get("Text", ""))
+                else:
+                    for comp in child.findall(".//*"):
+                        if comp.tag.endswith("}Component") or comp.tag == "Component":
+                            tokens_buffer.append(f"#{comp.get('Name', '')}")
+                            break
+            elif scope == "GlobalVariable" or scope == "GlobalConstant":
+                symbol = None
+                constant = None
+                for sub_elem in child:
+                    if sub_elem.tag.endswith("}Symbol") or sub_elem.tag == "Symbol":
+                        symbol = sub_elem
+                        break
+                    elif sub_elem.tag.endswith("}Constant") or sub_elem.tag == "Constant":
+                        constant = sub_elem
+                        break
+                if symbol is not None:
+                    first_component = True
+                    for elem in symbol:
+                        elem_tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                        if elem_tag == "Component":
+                            if first_component:
+                                process_component_with_array(elem, tokens_buffer, '"')
+                                tokens_buffer.append('"')
+                                first_component = False
+                            else:
+                                process_component_with_array(elem, tokens_buffer, "")
+                        elif elem_tag == "Token":
+                            tokens_buffer.append(elem.get("Text", ""))
+                elif constant is not None:
+                    const_name = constant.get("Name", "")
+                    if const_name:
+                        tokens_buffer.append(f'"{const_name}"')
+            elif scope == "LiteralConstant":
+                for constant in child.findall(".//*"):
+                    if constant.tag.endswith("}ConstantValue") or constant.tag == "ConstantValue":
+                        tokens_buffer.append(constant.text or "")
+                        break
+            elif scope == "TypedConstant":
+                for constant in child.findall(".//*"):
+                    if constant.tag.endswith("}ConstantValue") or constant.tag == "ConstantValue":
+                        tokens_buffer.append(constant.text or "")
+                        break
+            elif scope == "Call":
+                call_tokens = []
+                process_call_element(child, call_tokens)
+                tokens_buffer.extend(call_tokens)
+        else:
+            # Recurse into nested unknown containers
+            if len(child) > 0:
+                process_unknown_container(child, tokens_buffer)
+
+
 def extract_code_from_network_source(network_source):
     """Extract code lines from a NetworkSource element"""
     code_lines = []
@@ -921,13 +1155,21 @@ def extract_code_from_network_source(network_source):
                     if child.text:
                         tokens_buffer.append(child.text)
                 elif tag_name == "LineComment":
-                    # Handle line comments
+                    # Handle comments - check if it's a block comment (Inserted="true") or line comment
+                    is_block_comment = child.get("Inserted", "").lower() == "true"
                     comment_text = ""
-                    for text_elem in child.findall(".//Text"):
-                        if text_elem.text:
-                            comment_text += text_elem.text
+                    # Iterate over children to handle namespace - findall won't work with namespaced elements
+                    for sub_elem in child.iter():
+                        sub_tag = sub_elem.tag.split("}")[-1] if "}" in sub_elem.tag else sub_elem.tag
+                        if sub_tag == "Text" and sub_elem.text:
+                            comment_text += sub_elem.text
                     if comment_text:
-                        tokens_buffer.append("// " + comment_text)
+                        if is_block_comment:
+                            # Multi-line block comment wrapped in (* ... *)
+                            tokens_buffer.append("(*" + comment_text + "*)")
+                        else:
+                            # Single line comment prefixed with //
+                            tokens_buffer.append("//" + comment_text)
                 elif tag_name == "Access":
                     # Handle different scope types with proper SCL formatting:
                     # - LocalVariable: prefix with # (e.g., #stSensor.bCarrierAtPreStop)
@@ -935,7 +1177,7 @@ def extract_code_from_network_source(network_source):
                     # - LiteralConstant/TypedConstant: output value directly (e.g., FALSE, T#8s)
                     # - Call: handle function/block calls
                     scope = child.get("Scope", "")
-                    
+
                     if scope == "LocalVariable":
                         # Look for Symbol/Component structure
                         symbol = None
@@ -1021,7 +1263,11 @@ def extract_code_from_network_source(network_source):
                         call_tokens = []
                         process_call_element(child, call_tokens)
                         tokens_buffer.extend(call_tokens)
-            
+                else:
+                    # Unknown tag - might be a container element (Expression, Term, etc.)
+                    # Recurse into children to extract tokens that would otherwise be dropped
+                    process_unknown_container(child, tokens_buffer)
+
             # Add any remaining tokens
             if tokens_buffer:
                 code_lines.append("".join(tokens_buffer))
