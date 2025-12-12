@@ -205,7 +205,59 @@ class TIAClientWrapper:
                 "success": False,
                 "error": str(e)
             }
-    
+
+    async def save_project_as(self, target_path: str, project_name: str) -> Dict[str, Any]:
+        """Save the current project to a new location with a new name
+
+        Args:
+            target_path: Target directory path where the project will be saved
+            project_name: New name for the project
+
+        Returns:
+            Dict with success status and new project info
+        """
+        if not self.project:
+            return {
+                "success": False,
+                "error": "No project is currently open"
+            }
+
+        try:
+            import os
+
+            # Validate target path
+            if not os.path.isabs(target_path):
+                target_path = os.path.abspath(target_path)
+
+            # Create target directory if it doesn't exist
+            if not os.path.exists(target_path):
+                os.makedirs(target_path)
+
+            def _save_project_as():
+                # save_as closes current project and reopens the new one
+                self.project.save_as(project_name, target_path)
+                return True
+
+            await self.execute_sync(_save_project_as)
+
+            # Calculate new project path
+            new_project_path = os.path.join(target_path, project_name)
+
+            logger.info(f"Project saved as '{project_name}' at {new_project_path}")
+            return {
+                "success": True,
+                "message": f"Project saved as '{project_name}'",
+                "new_project_path": new_project_path,
+                "project_name": project_name
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to save project as: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     async def close_project(self) -> Dict[str, Any]:
         """Close the current project
         

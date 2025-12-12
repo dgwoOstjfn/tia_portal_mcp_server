@@ -17,9 +17,9 @@
 
 This document provides comprehensive instructions for using all available MCP tools/methods in the TIA Portal MCP Server. Each method includes interface descriptions, parameters, types, practical examples, and expected responses.
 
-The server provides **30 MCP tools** organized into 7 categories:
+The server provides **31 MCP tools** organized into 7 categories:
 - **Session Management** (3 tools)
-- **Project Operations** (4 tools)
+- **Project Operations** (5 tools)
 - **Block Operations** (4 tools)
 - **Compilation Operations** (4 tools)
 - **File Conversion Operations** (10 tools)
@@ -238,7 +238,64 @@ result = await call_tool("save_project", {
 })
 ```
 
-### 6. close_project
+### 6. save_project_as
+
+Saves the current project to a new location with a new name. The project will be saved and reopened from the new location.
+
+**Parameters:**
+- `session_id` (required): `string` - Session ID
+- `target_path` (required): `string` - Target directory path where the project will be saved
+- `project_name` (required): `string` - New name for the project
+
+**Interface:**
+```json
+{
+  "name": "save_project_as",
+  "arguments": {
+    "session_id": "uuid-string-12345",
+    "target_path": "D:\\Projects\\NewLocation",
+    "project_name": "MyProject_Copy"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Project saved as 'MyProject_Copy'",
+  "new_project_path": "D:\\Projects\\NewLocation\\MyProject_Copy",
+  "project_name": "MyProject_Copy"
+}
+```
+
+**Example Usage:**
+```python
+# Save project to a new location with a new name
+result = await call_tool("save_project_as", {
+    "session_id": session_id,
+    "target_path": "D:\\Backups\\TIA_Projects",
+    "project_name": "MyProject_Backup_2025"
+})
+
+if result["success"]:
+    print(f"Project saved to: {result['new_project_path']}")
+
+# Create a copy in a different folder
+result = await call_tool("save_project_as", {
+    "session_id": session_id,
+    "target_path": "E:\\Archive",
+    "project_name": "ArchivedProject_v2"
+})
+```
+
+**Notes:**
+- The target directory will be created if it doesn't exist
+- After saving, the project is automatically reopened from the new location
+- The session continues working with the newly saved project
+- Original project file remains unchanged at its original location
+
+### 7. close_project
 
 Closes the currently open project.
 
@@ -271,7 +328,7 @@ result = await call_tool("close_project", {
 })
 ```
 
-### 7. get_project_info
+### 8. get_project_info
 
 Retrieves information about the currently open project.
 
@@ -1686,7 +1743,7 @@ if result:
 | Category | Tools | Description |
 |----------|-------|-------------|
 | **Session** | `create_session`, `close_session`, `list_sessions` | Manage TIA Portal sessions |
-| **Project** | `open_project`, `save_project`, `close_project`, `get_project_info` | Project lifecycle management |
+| **Project** | `open_project`, `save_project`, `save_project_as`, `close_project`, `get_project_info` | Project lifecycle management |
 | **Blocks** | `list_blocks`, `import_blocks`, `export_blocks`, `create_block_from_scl` | Block operations and management |
 | **Compilation** | `compile_project`, `compile_device`, `compile_block`, `get_compilation_errors` | Compilation and error checking |
 | **Conversion** | `convert_xml_to_json`, `convert_json_to_xml`, `convert_json_to_scl`, `convert_scl_to_json`, `convert_xml_to_scl`, `convert_scl_to_xml` | File format conversions |

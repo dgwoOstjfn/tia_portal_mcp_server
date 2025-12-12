@@ -115,6 +115,28 @@ class TIAPortalMCPServer:
                     }
                 ),
                 types.Tool(
+                    name="save_project_as",
+                    description="Save the current project to a new location with a new name. The project will be saved and reopened from the new location.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session ID"
+                            },
+                            "target_path": {
+                                "type": "string",
+                                "description": "Target directory path where the project will be saved"
+                            },
+                            "project_name": {
+                                "type": "string",
+                                "description": "New name for the project"
+                            }
+                        },
+                        "required": ["session_id", "target_path", "project_name"]
+                    }
+                ),
+                types.Tool(
                     name="close_project",
                     description="Close the current project",
                     inputSchema={
@@ -892,9 +914,35 @@ class TIAPortalMCPServer:
             if result["success"]:
                 session.project_modified = False
                 session.update_activity()
-            
+
             return result
-        
+
+        elif tool_name == "save_project_as":
+            session = await self.session_manager.get_session(arguments["session_id"])
+            if not session:
+                return {
+                    "success": False,
+                    "error": "Session not found"
+                }
+
+            target_path = arguments.get("target_path")
+            project_name = arguments.get("project_name")
+
+            if not target_path or not project_name:
+                return {
+                    "success": False,
+                    "error": "Both target_path and project_name are required"
+                }
+
+            result = await session.client_wrapper.save_project_as(target_path, project_name)
+            if result["success"]:
+                # Update session with new project info
+                session.current_project = project_name
+                session.project_modified = False
+                session.update_activity()
+
+            return result
+
         elif tool_name == "close_project":
             session = await self.session_manager.get_session(arguments["session_id"])
             if not session:
